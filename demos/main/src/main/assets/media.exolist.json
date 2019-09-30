@@ -1,5 +1,15 @@
 [
   {
+    "name": "Dolby",
+    "samples": [
+      {
+        "name": "EAC3",
+        "uri": "http://d9zmmjtv72w5o.cloudfront.net/MobileKits/Dolby_Digital_Plus_Online_Delivery_Kit_v1.4/Test_Signals/muxed_streams/DASH/OnDemand_MPD/ChID_voices_1280x720p_2997fps_h264_2ch_128kbps_ddp.mpd",
+        "extension": "mpd"
+      }
+    ]
+  },
+  {
     "name": "YouTube DASH",
     "samples": [
       {
