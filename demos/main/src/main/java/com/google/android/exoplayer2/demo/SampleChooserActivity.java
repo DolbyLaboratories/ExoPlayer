@@ -68,6 +68,7 @@ public class SampleChooserActivity extends AppCompatActivity
   private SampleAdapter sampleAdapter;
   private MenuItem preferExtensionDecodersMenuItem;
   private MenuItem randomAbrMenuItem;
+  private MenuItem tunnelingMenuItem;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -125,6 +126,10 @@ public class SampleChooserActivity extends AppCompatActivity
     preferExtensionDecodersMenuItem = menu.findItem(R.id.prefer_extension_decoders);
     preferExtensionDecodersMenuItem.setVisible(useExtensionRenderers);
     randomAbrMenuItem = menu.findItem(R.id.random_abr);
+    tunnelingMenuItem = menu.findItem(R.id.tunneling);
+    if (Util.SDK_INT < 21) {
+      tunnelingMenuItem.setEnabled(false);
+    }
     return true;
   }
 
@@ -173,6 +178,7 @@ public class SampleChooserActivity extends AppCompatActivity
             ? PlayerActivity.ABR_ALGORITHM_RANDOM
             : PlayerActivity.ABR_ALGORITHM_DEFAULT;
     intent.putExtra(PlayerActivity.ABR_ALGORITHM_EXTRA, abrAlgorithm);
+    intent.putExtra(PlayerActivity.TUNNELING, isNonNullAndChecked(tunnelingMenuItem));
     sample.addToIntent(intent);
     startActivity(intent);
     return true;
@@ -204,6 +210,9 @@ public class SampleChooserActivity extends AppCompatActivity
     UriSample uriSample = (UriSample) sample;
     if (uriSample.drmInfo != null) {
       return R.string.download_drm_unsupported;
+    }
+    if (uriSample.isLive) {
+      return R.string.download_live_unsupported;
     }
     if (uriSample.adTagUri != null) {
       return R.string.download_ads_unsupported;
@@ -294,6 +303,7 @@ public class SampleChooserActivity extends AppCompatActivity
       String sampleName = null;
       Uri uri = null;
       String extension = null;
+      boolean isLive = false;
       String drmScheme = null;
       String drmLicenseUrl = null;
       String[] drmKeyRequestProperties = null;
@@ -317,6 +327,9 @@ public class SampleChooserActivity extends AppCompatActivity
             break;
           case "drm_scheme":
             drmScheme = reader.nextString();
+            break;
+          case "is_live":
+            isLive = reader.nextBoolean();
             break;
           case "drm_license_url":
             drmLicenseUrl = reader.nextString();
@@ -370,9 +383,10 @@ public class SampleChooserActivity extends AppCompatActivity
       } else {
         return new UriSample(
             sampleName,
-            drmInfo,
             uri,
             extension,
+            isLive,
+            drmInfo,
             adTagUri != null ? Uri.parse(adTagUri) : null,
             sphericalStereoMode);
       }
@@ -486,7 +500,7 @@ public class SampleChooserActivity extends AppCompatActivity
       ImageButton downloadButton = view.findViewById(R.id.download_button);
       downloadButton.setTag(sample);
       downloadButton.setColorFilter(
-          canDownload ? (isDownloaded ? 0xFF42A5F5 : 0xFFBDBDBD) : 0xFFEEEEEE);
+          canDownload ? (isDownloaded ? 0xFF42A5F5 : 0xFFBDBDBD) : 0xFF666666);
       downloadButton.setImageResource(
           isDownloaded ? R.drawable.ic_download_done : R.drawable.ic_download);
     }

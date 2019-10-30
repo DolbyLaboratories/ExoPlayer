@@ -337,7 +337,20 @@ public final class Util {
   }
 
   /**
-   * Concatenates two non-null type arrays.
+   * Creates a new array containing {@code original} with {@code newElement} appended.
+   *
+   * @param original The input array.
+   * @param newElement The element to append.
+   * @return The new array.
+   */
+  public static <T> T[] nullSafeArrayAppend(T[] original, T newElement) {
+    @NullableType T[] result = Arrays.copyOf(original, original.length + 1);
+    result[original.length] = newElement;
+    return castNonNullTypeArray(result);
+  }
+
+  /**
+   * Creates a new array containing the concatenation of two non-null type arrays.
    *
    * @param first The first array.
    * @param second The second array.
@@ -1240,9 +1253,9 @@ public final class Util {
    * @param codecs A codec sequence string, as defined in RFC 6381.
    * @param trackType One of {@link C}{@code .TRACK_TYPE_*}.
    * @return A copy of {@code codecs} without the codecs whose track type doesn't match {@code
-   *     trackType}.
+   *     trackType}. If this ends up empty, or {@code codecs} is null, return null.
    */
-  public static @Nullable String getCodecsOfType(String codecs, int trackType) {
+  public static @Nullable String getCodecsOfType(@Nullable String codecs, int trackType) {
     String[] codecArray = splitCodecs(codecs);
     if (codecArray.length == 0) {
       return null;
@@ -1263,9 +1276,9 @@ public final class Util {
    * Splits a codecs sequence string, as defined in RFC 6381, into individual codec strings.
    *
    * @param codecs A codec sequence string, as defined in RFC 6381.
-   * @return The split codecs, or an array of length zero if the input was empty.
+   * @return The split codecs, or an array of length zero if the input was empty or null.
    */
-  public static String[] splitCodecs(String codecs) {
+  public static String[] splitCodecs(@Nullable String codecs) {
     if (TextUtils.isEmpty(codecs)) {
       return new String[0];
     }

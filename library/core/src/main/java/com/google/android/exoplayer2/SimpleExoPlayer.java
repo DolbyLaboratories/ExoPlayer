@@ -32,7 +32,6 @@ import androidx.annotation.VisibleForTesting;
 import com.google.android.exoplayer2.analytics.AnalyticsCollector;
 import com.google.android.exoplayer2.analytics.AnalyticsListener;
 import com.google.android.exoplayer2.audio.AudioAttributes;
-import com.google.android.exoplayer2.audio.AudioFocusManager;
 import com.google.android.exoplayer2.audio.AudioListener;
 import com.google.android.exoplayer2.audio.AudioRendererEventListener;
 import com.google.android.exoplayer2.audio.AuxEffectInfo;
@@ -57,6 +56,7 @@ import com.google.android.exoplayer2.util.Clock;
 import com.google.android.exoplayer2.util.Log;
 import com.google.android.exoplayer2.util.PriorityTaskManager;
 import com.google.android.exoplayer2.util.Util;
+import com.google.android.exoplayer2.video.VideoDecoderOutputBufferRenderer;
 import com.google.android.exoplayer2.video.VideoFrameMetadataListener;
 import com.google.android.exoplayer2.video.VideoRendererEventListener;
 import com.google.android.exoplayer2.video.spherical.CameraMotionListener;
@@ -326,7 +326,9 @@ public class SimpleExoPlayer extends BasePlayer
   private final BandwidthMeter bandwidthMeter;
   private final AnalyticsCollector analyticsCollector;
 
+  private final AudioBecomingNoisyManager audioBecomingNoisyManager;
   private final AudioFocusManager audioFocusManager;
+  private final WakeLockManager wakeLockManager;
 
   @Nullable private Format videoFormat;
   @Nullable private Format audioFormat;
@@ -456,7 +458,9 @@ public class SimpleExoPlayer extends BasePlayer
     if (drmSessionManager instanceof DefaultDrmSessionManager) {
       ((DefaultDrmSessionManager) drmSessionManager).addListener(eventHandler, analyticsCollector);
     }
+    audioBecomingNoisyManager = new AudioBecomingNoisyManager(context, componentListener);
     audioFocusManager = new AudioFocusManager(context, componentListener);
+    wakeLockManager = new WakeLockManager(context);
   }
 
   @Override
@@ -587,8 +591,8 @@ public class SimpleExoPlayer extends BasePlayer
         Log.w(TAG, "Replacing existing SurfaceTextureListener.");
       }
       textureView.setSurfaceTextureListener(componentListener);
-      SurfaceTexture surfaceTexture = textureView.isAvailable() ? textureView.getSurfaceTexture()
-          : null;
+      SurfaceTexture surfaceTexture =
+          textureView.isAvailable() ? textureView.getSurfaceTexture() : null;
       if (surfaceTexture == null) {
         setVideoSurfaceInternal(/* surface= */ null, /* ownsSurface= */ true);
         maybeNotifySurfaceSizeChanged(/* width= */ 0, /* height= */ 0);
@@ -604,6 +608,21 @@ public class SimpleExoPlayer extends BasePlayer
     verifyApplicationThread();
     if (textureView != null && textureView == this.textureView) {
       setVideoTextureView(null);
+    }
+  }
+
+  @Override
+  public void setOutputBufferRenderer(VideoDecoderOutputBufferRenderer outputBufferRenderer) {
+    verifyApplicationThread();
+    setVideoSurface(null);
+    for (Renderer renderer : renderers) {
+      if (renderer.getTrackType() == C.TRACK_TYPE_VIDEO) {
+        player
+            .createMessage(renderer)
+            .setType(C.MSG_SET_OUTPUT_BUFFER_RENDERER)
+            .setPayload(outputBufferRenderer)
+            .send();
+      }
     }
   }
 
@@ -698,12 +717,12 @@ public class SimpleExoPlayer extends BasePlayer
 
   /**
    * Sets the stream type for audio playback, used by the underlying audio track.
-   * <p>
-   * Setting the stream type during playback may introduce a short gap in audio output as the audio
-   * track is recreated. A new audio session id will also be generated.
-   * <p>
-   * Calling this method overwrites any attributes set previously by calling
-   * {@link #setAudioAttributes(AudioAttributes)}.
+   *
+   * <p>Setting the stream type during playback may introduce a short gap in audio output as the
+   * audio track is recreated. A new audio session id will also be generated.
+   *
+   * <p>Calling this method overwrites any attributes set previously by calling {@link
+   * #setAudioAttributes(AudioAttributes)}.
    *
    * @deprecated Use {@link #setAudioAttributes(AudioAttributes)}.
    * @param streamType The stream type for audio playback.
@@ -750,6 +769,18 @@ public class SimpleExoPlayer extends BasePlayer
   public void removeAnalyticsListener(AnalyticsListener listener) {
     verifyApplicationThread();
     analyticsCollector.removeListener(listener);
+  }
+
+  /**
+   * Sets whether the player should pause automatically when audio is rerouted from a headset to
+   * device speakers. See the <a
+   * href="https://developer.android.com/guide/topics/media-apps/volume-and-earphones#becoming-noisy">audio
+   * becoming noisy</a> documentation for more information.
+   *
+   * @param handleAudioBecomingNoisy True if the player should handle audio becoming noisy.
+   */
+  public void setHandleAudioBecomingNoisy(boolean handleAudioBecomingNoisy) {
+    audioBecomingNoisyManager.setEnabled(handleAudioBecomingNoisy);
   }
 
   /**
@@ -1325,6 +1356,7 @@ public class SimpleExoPlayer extends BasePlayer
   public void release() {
     verifyApplicationThread();
     audioFocusManager.handleStop();
+    wakeLockManager.setStayAwake(false);
     player.release();
     removeSurfaceCallbacks();
     if (surface != null) {
@@ -1443,6 +1475,22 @@ public class SimpleExoPlayer extends BasePlayer
     return player.getContentBufferedPosition();
   }
 
+  /**
+   * Sets whether to enable the acquiring and releasing of a {@link
+   * android.os.PowerManager.WakeLock}.
+   *
+   * <p>By default, automatic wake lock handling is not enabled. Enabling this on will acquire the
+   * WakeLock if necessary. Disabling this will release the WakeLock if it is held.
+   *
+   * @param handleWakeLock True if the player should handle a {@link
+   *     android.os.PowerManager.WakeLock}, false otherwise. This is for use with a foreground
+   *     {@link android.app.Service}, for allowing audio playback with the screen off. Please note
+   *     that enabling this requires the {@link android.Manifest.permission#WAKE_LOCK} permission.
+   */
+  public void setHandleWakeLock(boolean handleWakeLock) {
+    wakeLockManager.setEnabled(handleWakeLock);
+  }
+
   // Internal methods.
 
   private void removeSurfaceCallbacks() {
@@ -1509,13 +1557,13 @@ public class SimpleExoPlayer extends BasePlayer
 
   private void updatePlayWhenReady(
       boolean playWhenReady, @AudioFocusManager.PlayerCommand int playerCommand) {
+    playWhenReady = playWhenReady && playerCommand != AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY;
+    @PlaybackSuppressionReason
     int playbackSuppressionReason =
-        playerCommand == AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY
-            ? Player.PLAYBACK_SUPPRESSION_REASON_NONE
-            : Player.PLAYBACK_SUPPRESSION_REASON_AUDIO_FOCUS_LOSS;
-    player.setPlayWhenReady(
-        playWhenReady && playerCommand != AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY,
-        playbackSuppressionReason);
+        playWhenReady && playerCommand != AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY
+            ? Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS
+            : Player.PLAYBACK_SUPPRESSION_REASON_NONE;
+    player.setPlayWhenReady(playWhenReady, playbackSuppressionReason);
   }
 
   private void verifyApplicationThread() {
@@ -1537,6 +1585,7 @@ public class SimpleExoPlayer extends BasePlayer
           SurfaceHolder.Callback,
           TextureView.SurfaceTextureListener,
           AudioFocusManager.PlayerControl,
+          AudioBecomingNoisyManager.EventListener,
           Player.EventListener {
 
     // VideoRendererEventListener implementation
@@ -1550,11 +1599,11 @@ public class SimpleExoPlayer extends BasePlayer
     }
 
     @Override
-    public void onVideoDecoderInitialized(String decoderName, long initializedTimestampMs,
-        long initializationDurationMs) {
+    public void onVideoDecoderInitialized(
+        String decoderName, long initializedTimestampMs, long initializationDurationMs) {
       for (VideoRendererEventListener videoDebugListener : videoDebugListeners) {
-        videoDebugListener.onVideoDecoderInitialized(decoderName, initializedTimestampMs,
-            initializationDurationMs);
+        videoDebugListener.onVideoDecoderInitialized(
+            decoderName, initializedTimestampMs, initializationDurationMs);
       }
     }
 
@@ -1574,8 +1623,8 @@ public class SimpleExoPlayer extends BasePlayer
     }
 
     @Override
-    public void onVideoSizeChanged(int width, int height, int unappliedRotationDegrees,
-        float pixelWidthHeightRatio) {
+    public void onVideoSizeChanged(
+        int width, int height, int unappliedRotationDegrees, float pixelWidthHeightRatio) {
       for (com.google.android.exoplayer2.video.VideoListener videoListener : videoListeners) {
         // Prevent duplicate notification if a listener is both a VideoRendererEventListener and
         // a VideoListener, as they have the same method signature.
@@ -1585,8 +1634,8 @@ public class SimpleExoPlayer extends BasePlayer
         }
       }
       for (VideoRendererEventListener videoDebugListener : videoDebugListeners) {
-        videoDebugListener.onVideoSizeChanged(width, height, unappliedRotationDegrees,
-            pixelWidthHeightRatio);
+        videoDebugListener.onVideoSizeChanged(
+            width, height, unappliedRotationDegrees, pixelWidthHeightRatio);
       }
     }
 
@@ -1640,11 +1689,11 @@ public class SimpleExoPlayer extends BasePlayer
     }
 
     @Override
-    public void onAudioDecoderInitialized(String decoderName, long initializedTimestampMs,
-        long initializationDurationMs) {
+    public void onAudioDecoderInitialized(
+        String decoderName, long initializedTimestampMs, long initializationDurationMs) {
       for (AudioRendererEventListener audioDebugListener : audioDebugListeners) {
-        audioDebugListener.onAudioDecoderInitialized(decoderName, initializedTimestampMs,
-            initializationDurationMs);
+        audioDebugListener.onAudioDecoderInitialized(
+            decoderName, initializedTimestampMs, initializationDurationMs);
       }
     }
 
@@ -1657,8 +1706,8 @@ public class SimpleExoPlayer extends BasePlayer
     }
 
     @Override
-    public void onAudioSinkUnderrun(int bufferSize, long bufferSizeMs,
-        long elapsedSinceLastFeedMs) {
+    public void onAudioSinkUnderrun(
+        int bufferSize, long bufferSizeMs, long elapsedSinceLastFeedMs) {
       for (AudioRendererEventListener audioDebugListener : audioDebugListeners) {
         audioDebugListener.onAudioSinkUnderrun(bufferSize, bufferSizeMs, elapsedSinceLastFeedMs);
       }
@@ -1748,6 +1797,13 @@ public class SimpleExoPlayer extends BasePlayer
       updatePlayWhenReady(getPlayWhenReady(), playerCommand);
     }
 
+    // AudioBecomingNoisyManager.EventListener implementation.
+
+    @Override
+    public void onAudioBecomingNoisy() {
+      setPlayWhenReady(false);
+    }
+
     // Player.EventListener implementation.
 
     @Override
@@ -1760,6 +1816,20 @@ public class SimpleExoPlayer extends BasePlayer
           priorityTaskManager.remove(C.PRIORITY_PLAYBACK);
           isPriorityTaskManagerRegistered = false;
         }
+      }
+    }
+
+    @Override
+    public void onPlayerStateChanged(boolean playWhenReady, @State int playbackState) {
+      switch (playbackState) {
+        case Player.STATE_READY:
+        case Player.STATE_BUFFERING:
+          wakeLockManager.setStayAwake(playWhenReady);
+          break;
+        case Player.STATE_ENDED:
+        case Player.STATE_IDLE:
+          wakeLockManager.setStayAwake(false);
+          break;
       }
     }
   }

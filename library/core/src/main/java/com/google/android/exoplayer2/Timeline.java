@@ -67,8 +67,9 @@ import com.google.android.exoplayer2.util.Util;
  * duration is unknown, since it's continually extending as more content is broadcast. If content
  * only remains available for a limited period of time then the window may start at a non-zero
  * position, defining the region of content that can still be played. The window will have {@link
- * Window#isDynamic} set to true if the stream is still live. Its default position is typically near
- * to the live edge (indicated by the black dot in the figure above).
+ * Window#isLive} set to true to indicate it's a live stream and {@link Window#isDynamic} set to
+ * true as long as we expect changes to the live window. Its default position is typically near to
+ * the live edge (indicated by the black dot in the figure above).
  *
  * <h3>Live stream with indefinite availability</h3>
  *
@@ -159,8 +160,13 @@ public abstract class Timeline {
     public boolean isDynamic;
 
     /**
-     * The index of the first period that belongs to this window.
+     * Whether the media in this window is live. For informational purposes only.
+     *
+     * <p>Check {@link #isDynamic} to know whether this window may still change.
      */
+    public boolean isLive;
+
+    /** The index of the first period that belongs to this window. */
     public int firstPeriodIndex;
 
     /**
@@ -201,6 +207,7 @@ public abstract class Timeline {
         long windowStartTimeMs,
         boolean isSeekable,
         boolean isDynamic,
+        boolean isLive,
         long defaultPositionUs,
         long durationUs,
         int firstPeriodIndex,
@@ -213,6 +220,7 @@ public abstract class Timeline {
       this.windowStartTimeMs = windowStartTimeMs;
       this.isSeekable = isSeekable;
       this.isDynamic = isDynamic;
+      this.isLive = isLive;
       this.defaultPositionUs = defaultPositionUs;
       this.durationUs = durationUs;
       this.firstPeriodIndex = firstPeriodIndex;
@@ -287,6 +295,7 @@ public abstract class Timeline {
           && windowStartTimeMs == that.windowStartTimeMs
           && isSeekable == that.isSeekable
           && isDynamic == that.isDynamic
+          && isLive == that.isLive
           && defaultPositionUs == that.defaultPositionUs
           && durationUs == that.durationUs
           && firstPeriodIndex == that.firstPeriodIndex
@@ -304,6 +313,7 @@ public abstract class Timeline {
       result = 31 * result + (int) (windowStartTimeMs ^ (windowStartTimeMs >>> 32));
       result = 31 * result + (isSeekable ? 1 : 0);
       result = 31 * result + (isDynamic ? 1 : 0);
+      result = 31 * result + (isLive ? 1 : 0);
       result = 31 * result + (int) (defaultPositionUs ^ (defaultPositionUs >>> 32));
       result = 31 * result + (int) (durationUs ^ (durationUs >>> 32));
       result = 31 * result + firstPeriodIndex;

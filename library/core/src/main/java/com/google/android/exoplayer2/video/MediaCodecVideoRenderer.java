@@ -142,6 +142,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
 
   private int pendingRotationDegrees;
   private float pendingPixelWidthHeightRatio;
+  @Nullable private MediaFormat currentMediaFormat;
   private int currentWidth;
   private int currentHeight;
   private int currentUnappliedRotationDegrees;
@@ -502,6 +503,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
     lastInputTimeUs = C.TIME_UNSET;
     outputStreamOffsetUs = C.TIME_UNSET;
     pendingOutputStreamOffsetCount = 0;
+    currentMediaFormat = null;
     clearReportedVideoSize();
     clearRenderedFirstFrame();
     frameReleaseTimeHelper.disable();
@@ -720,6 +722,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
 
   @Override
   protected void onOutputFormatChanged(MediaCodec codec, MediaFormat outputFormat) {
+    currentMediaFormat = outputFormat;
     boolean hasCrop = outputFormat.containsKey(KEY_CROP_RIGHT)
         && outputFormat.containsKey(KEY_CROP_LEFT) && outputFormat.containsKey(KEY_CROP_BOTTOM)
         && outputFormat.containsKey(KEY_CROP_TOP);
@@ -802,14 +805,15 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
     long elapsedRealtimeNowUs = SystemClock.elapsedRealtime() * 1000;
     long elapsedSinceLastRenderUs = elapsedRealtimeNowUs - lastRenderTimeUs;
     boolean isStarted = getState() == STATE_STARTED;
-    // Don't force output until we joined and always render first frame if not joining.
+    // Don't force output until we joined and the position reached the current stream.
     boolean forceRenderOutputBuffer =
         joiningDeadlineMs == C.TIME_UNSET
+            && positionUs >= outputStreamOffsetUs
             && (!renderedFirstFrame
                 || (isStarted && shouldForceRenderOutputBuffer(earlyUs, elapsedSinceLastRenderUs)));
     if (forceRenderOutputBuffer) {
       long releaseTimeNs = System.nanoTime();
-      notifyFrameMetadataListener(presentationTimeUs, releaseTimeNs, format);
+      notifyFrameMetadataListener(presentationTimeUs, releaseTimeNs, format, currentMediaFormat);
       if (Util.SDK_INT >= 21) {
         renderOutputBufferV21(codec, bufferIndex, presentationTimeUs, releaseTimeNs);
       } else {
@@ -853,7 +857,8 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
     if (Util.SDK_INT >= 21) {
       // Let the underlying framework time the release.
       if (earlyUs < 50000) {
-        notifyFrameMetadataListener(presentationTimeUs, adjustedReleaseTimeNs, format);
+        notifyFrameMetadataListener(
+            presentationTimeUs, adjustedReleaseTimeNs, format, currentMediaFormat);
         renderOutputBufferV21(codec, bufferIndex, presentationTimeUs, adjustedReleaseTimeNs);
         return true;
       }
@@ -871,7 +876,8 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
             return false;
           }
         }
-        notifyFrameMetadataListener(presentationTimeUs, adjustedReleaseTimeNs, format);
+        notifyFrameMetadataListener(
+            presentationTimeUs, adjustedReleaseTimeNs, format, currentMediaFormat);
         renderOutputBuffer(codec, bufferIndex, presentationTimeUs);
         return true;
       }
@@ -904,10 +910,10 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
   }
 
   private void notifyFrameMetadataListener(
-      long presentationTimeUs, long releaseTimeNs, Format format) {
+      long presentationTimeUs, long releaseTimeNs, Format format, MediaFormat mediaFormat) {
     if (frameMetadataListener != null) {
       frameMetadataListener.onVideoFrameAboutToBeRendered(
-          presentationTimeUs, releaseTimeNs, format);
+          presentationTimeUs, releaseTimeNs, format, mediaFormat);
     }
   }
 
@@ -956,6 +962,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
           pendingOutputStreamSwitchTimesUs,
           /* destPos= */ 0,
           pendingOutputStreamOffsetCount);
+      clearRenderedFirstFrame();
     }
   }
 
@@ -1555,7 +1562,8 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
           // https://github.com/google/ExoPlayer/issues/4419,
           // https://github.com/google/ExoPlayer/issues/4460,
           // https://github.com/google/ExoPlayer/issues/4468,
-          // https://github.com/google/ExoPlayer/issues/5312.
+          // https://github.com/google/ExoPlayer/issues/5312,
+          // https://github.com/google/ExoPlayer/issues/6503.
           switch (Util.DEVICE) {
             case "1601":
             case "1713":
@@ -1622,6 +1630,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
             case "JGZ":
             case "K50a40":
             case "kate":
+            case "l5460":
             case "le_x6":
             case "LS-5017":
             case "M5c":
@@ -1691,6 +1700,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
           switch (Util.MODEL) {
             case "AFTA":
             case "AFTN":
+            case "JSN-L21":
               deviceNeedsSetOutputSurfaceWorkaround = true;
               break;
             default:
@@ -1706,11 +1716,6 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
 
   protected Surface getSurface() {
     return surface;
-  }
-
-  /** Returns true if the first frame has been rendered (playback has not necessarily begun). */
-  protected final boolean haveRenderedFirstFrame() {
-    return renderedFirstFrame;
   }
 
   protected static final class CodecMaxValues {

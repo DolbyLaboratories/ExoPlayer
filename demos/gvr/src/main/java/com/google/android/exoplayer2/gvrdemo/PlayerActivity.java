@@ -24,7 +24,6 @@ import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.C.ContentType;
 import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlaybackException;
-import com.google.android.exoplayer2.PlaybackPreparer;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.ext.gvr.GvrPlayerActivity;
@@ -37,14 +36,13 @@ import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedTrackInfo;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
-import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
 import com.google.android.exoplayer2.util.EventLogger;
 import com.google.android.exoplayer2.util.Util;
 
 /** An activity that plays media using {@link SimpleExoPlayer}. */
-public class PlayerActivity extends GvrPlayerActivity implements PlaybackPreparer {
+public class PlayerActivity extends GvrPlayerActivity {
 
   public static final String EXTENSION_EXTRA = "extension";
 
@@ -53,24 +51,16 @@ public class PlayerActivity extends GvrPlayerActivity implements PlaybackPrepare
   public static final String SPHERICAL_STEREO_MODE_TOP_BOTTOM = "top_bottom";
   public static final String SPHERICAL_STEREO_MODE_LEFT_RIGHT = "left_right";
 
-  private DataSource.Factory dataSourceFactory;
   private SimpleExoPlayer player;
-  private MediaSource mediaSource;
   private DefaultTrackSelector trackSelector;
   private TrackGroupArray lastSeenTrackGroupArray;
-
   private boolean startAutoPlay;
   private int startWindow;
   private long startPosition;
 
-  // Activity lifecycle
-
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    String userAgent = Util.getUserAgent(this, "ExoPlayerDemo");
-    dataSourceFactory =
-        new DefaultDataSourceFactory(this, new DefaultHttpDataSourceFactory(userAgent));
 
     String sphericalStereoMode = getIntent().getStringExtra(SPHERICAL_STEREO_MODE_EXTRA);
     if (sphericalStereoMode != null) {
@@ -93,68 +83,34 @@ public class PlayerActivity extends GvrPlayerActivity implements PlaybackPrepare
   }
 
   @Override
-  public void onResume() {
-    super.onResume();
-    if (Util.SDK_INT <= 23 || player == null) {
-      initializePlayer();
-    }
-  }
+  protected Player createPlayer() {
+    Intent intent = getIntent();
+    Uri uri = intent.getData();
+    DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this);
 
-  @Override
-  public void onPause() {
-    super.onPause();
-    if (Util.SDK_INT <= 23) {
-      releasePlayer();
-    }
-  }
+    trackSelector = new DefaultTrackSelector(/* context= */ this);
+    lastSeenTrackGroupArray = null;
 
-  @Override
-  public void onDestroy() {
-    super.onDestroy();
-  }
-
-  // PlaybackControlView.PlaybackPreparer implementation
-
-  @Override
-  public void preparePlayback() {
-    initializePlayer();
-  }
-
-  // Internal methods
-
-  private void initializePlayer() {
-    if (player == null) {
-      Intent intent = getIntent();
-      Uri uri = intent.getData();
-      if (!Util.checkCleartextTrafficPermitted(uri)) {
-        showToast(R.string.error_cleartext_not_permitted);
-        return;
-      }
-
-      DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this);
-
-      trackSelector = new DefaultTrackSelector(/* context= */ this);
-      lastSeenTrackGroupArray = null;
-
-      player =
-          new SimpleExoPlayer.Builder(/* context= */ this, renderersFactory)
-              .setTrackSelector(trackSelector)
-              .build();
-      player.addListener(new PlayerEventListener());
-      player.setPlayWhenReady(startAutoPlay);
-      player.addAnalyticsListener(new EventLogger(trackSelector));
-      setPlayer(player);
-
-      mediaSource = buildMediaSource(uri, intent.getStringExtra(EXTENSION_EXTRA));
-    }
+    player =
+        new SimpleExoPlayer.Builder(/* context= */ this, renderersFactory)
+            .setTrackSelector(trackSelector)
+            .build();
+    player.addListener(new PlayerEventListener());
+    player.setPlayWhenReady(startAutoPlay);
+    player.addAnalyticsListener(new EventLogger(trackSelector));
+    MediaSource mediaSource = buildMediaSource(uri, intent.getStringExtra(EXTENSION_EXTRA));
     boolean haveStartPosition = startWindow != C.INDEX_UNSET;
     if (haveStartPosition) {
       player.seekTo(startWindow, startPosition);
     }
     player.prepare(mediaSource, !haveStartPosition, false);
+    return player;
   }
 
   private MediaSource buildMediaSource(Uri uri, @Nullable String overrideExtension) {
+    String userAgent = Util.getUserAgent(this, "ExoPlayerVrDemo");
+    DefaultDataSourceFactory dataSourceFactory =
+        new DefaultDataSourceFactory(this, new DefaultHttpDataSourceFactory(userAgent));
     @ContentType int type = Util.inferContentType(uri, overrideExtension);
     switch (type) {
       case C.TYPE_DASH:
@@ -167,16 +123,6 @@ public class PlayerActivity extends GvrPlayerActivity implements PlaybackPrepare
         return new ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(uri);
       default:
         throw new IllegalStateException("Unsupported type: " + type);
-    }
-  }
-
-  private void releasePlayer() {
-    if (player != null) {
-      updateStartPosition();
-      player.release();
-      player = null;
-      mediaSource = null;
-      trackSelector = null;
     }
   }
 

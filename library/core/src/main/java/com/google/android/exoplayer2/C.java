@@ -27,6 +27,8 @@ import androidx.annotation.IntDef;
 import com.google.android.exoplayer2.PlayerMessage.Target;
 import com.google.android.exoplayer2.audio.AuxEffectInfo;
 import com.google.android.exoplayer2.util.Util;
+import com.google.android.exoplayer2.video.SimpleDecoderVideoRenderer;
+import com.google.android.exoplayer2.video.VideoDecoderOutputBufferRenderer;
 import com.google.android.exoplayer2.video.VideoFrameMetadataListener;
 import com.google.android.exoplayer2.video.spherical.CameraMotionListener;
 import java.lang.annotation.Documented;
@@ -519,6 +521,7 @@ public final class C {
   /** Indicates that a buffer should be decoded but not rendered. */
   public static final int BUFFER_FLAG_DECODE_ONLY = 1 << 31; // 0x80000000
 
+  // LINT.IfChange
   /**
    * Video decoder output modes. Possible modes are {@link #VIDEO_OUTPUT_MODE_NONE}, {@link
    * #VIDEO_OUTPUT_MODE_YUV} and {@link #VIDEO_OUTPUT_MODE_SURFACE_YUV}.
@@ -533,6 +536,10 @@ public final class C {
   public static final int VIDEO_OUTPUT_MODE_YUV = 0;
   /** Video decoder output mode that renders 4:2:0 YUV planes directly to a surface. */
   public static final int VIDEO_OUTPUT_MODE_SURFACE_YUV = 1;
+  // LINT.ThenChange(
+  //     ../../../../../../../../../extensions/av1/src/main/jni/gav1_jni.cc,
+  //     ../../../../../../../../../extensions/vp9/src/main/jni/vpx_jni.cc
+  // )
 
   /**
    * Video scaling modes for {@link MediaCodec}-based {@link Renderer}s. One of {@link
@@ -822,6 +829,13 @@ public final class C {
    * instance, or null.
    */
   public static final int MSG_SET_CAMERA_MOTION_LISTENER = 7;
+
+  /**
+   * The type of a message that can be passed to a {@link SimpleDecoderVideoRenderer} via {@link
+   * ExoPlayer#createMessage(Target)}. The message payload should be the target {@link
+   * VideoDecoderOutputBufferRenderer}, or null.
+   */
+  public static final int MSG_SET_OUTPUT_BUFFER_RENDERER = 8;
 
   /**
    * Applications or extensions may define custom {@code MSG_*} constants that can be passed to

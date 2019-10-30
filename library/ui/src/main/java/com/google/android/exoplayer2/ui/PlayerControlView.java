@@ -43,6 +43,7 @@ import com.google.android.exoplayer2.util.Util;
 import java.util.Arrays;
 import java.util.Formatter;
 import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * A view for controlling {@link Player} instances.
@@ -231,6 +232,7 @@ public class PlayerControlView extends FrameLayout {
   private static final int MAX_UPDATE_INTERVAL_MS = 1000;
 
   private final ComponentListener componentListener;
+  private final CopyOnWriteArrayList<VisibilityListener> visibilityListeners;
   private final View previousButton;
   private final View nextButton;
   private final View playButton;
@@ -265,7 +267,6 @@ public class PlayerControlView extends FrameLayout {
 
   @Nullable private Player player;
   private com.google.android.exoplayer2.ControlDispatcher controlDispatcher;
-  @Nullable private VisibilityListener visibilityListener;
   @Nullable private ProgressUpdateListener progressUpdateListener;
   @Nullable private PlaybackPreparer playbackPreparer;
 
@@ -335,6 +336,7 @@ public class PlayerControlView extends FrameLayout {
         a.recycle();
       }
     }
+    visibilityListeners = new CopyOnWriteArrayList<>();
     period = new Timeline.Period();
     window = new Timeline.Window();
     formatBuilder = new StringBuilder();
@@ -510,13 +512,21 @@ public class PlayerControlView extends FrameLayout {
   }
 
   /**
-   * Sets the {@link VisibilityListener}.
+   * Adds a {@link VisibilityListener}.
    *
-   * @param listener The listener to be notified about visibility changes, or null to remove the
-   *     current listener.
+   * @param listener The listener to be notified about visibility changes.
    */
-  public void setVisibilityListener(@Nullable VisibilityListener listener) {
-    this.visibilityListener = listener;
+  public void addVisibilityListener(VisibilityListener listener) {
+    visibilityListeners.add(listener);
+  }
+
+  /**
+   * Removes a {@link VisibilityListener}.
+   *
+   * @param listener The listener to be removed.
+   */
+  public void removeVisibilityListener(VisibilityListener listener) {
+    visibilityListeners.remove(listener);
   }
 
   /**
@@ -697,7 +707,7 @@ public class PlayerControlView extends FrameLayout {
   public void show() {
     if (!isVisible()) {
       setVisibility(VISIBLE);
-      if (visibilityListener != null) {
+      for (VisibilityListener visibilityListener : visibilityListeners) {
         visibilityListener.onVisibilityChange(getVisibility());
       }
       updateAll();
@@ -711,7 +721,7 @@ public class PlayerControlView extends FrameLayout {
   public void hide() {
     if (isVisible()) {
       setVisibility(GONE);
-      if (visibilityListener != null) {
+      for (VisibilityListener visibilityListener : visibilityListeners) {
         visibilityListener.onVisibilityChange(getVisibility());
       }
       removeCallbacks(updateProgressAction);
@@ -750,14 +760,14 @@ public class PlayerControlView extends FrameLayout {
       return;
     }
     boolean requestPlayPauseFocus = false;
-    boolean playing = isPlaying();
+    boolean shouldShowPauseButton = shouldShowPauseButton();
     if (playButton != null) {
-      requestPlayPauseFocus |= playing && playButton.isFocused();
-      playButton.setVisibility(playing ? GONE : VISIBLE);
+      requestPlayPauseFocus |= shouldShowPauseButton && playButton.isFocused();
+      playButton.setVisibility(shouldShowPauseButton ? GONE : VISIBLE);
     }
     if (pauseButton != null) {
-      requestPlayPauseFocus |= !playing && pauseButton.isFocused();
-      pauseButton.setVisibility(!playing ? GONE : VISIBLE);
+      requestPlayPauseFocus |= !shouldShowPauseButton && pauseButton.isFocused();
+      pauseButton.setVisibility(shouldShowPauseButton ? VISIBLE : GONE);
     }
     if (requestPlayPauseFocus) {
       requestPlayPauseFocus();
@@ -945,7 +955,7 @@ public class PlayerControlView extends FrameLayout {
     // Cancel any pending updates and schedule a new one if necessary.
     removeCallbacks(updateProgressAction);
     int playbackState = player == null ? Player.STATE_IDLE : player.getPlaybackState();
-    if (playbackState == Player.STATE_READY && player.getPlayWhenReady()) {
+    if (player != null && player.isPlaying()) {
       long mediaTimeDelayMs =
           timeBar != null ? timeBar.getPreferredUpdateDelay() : MAX_UPDATE_INTERVAL_MS;
 
@@ -967,10 +977,10 @@ public class PlayerControlView extends FrameLayout {
   }
 
   private void requestPlayPauseFocus() {
-    boolean playing = isPlaying();
-    if (!playing && playButton != null) {
+    boolean shouldShowPauseButton = shouldShowPauseButton();
+    if (!shouldShowPauseButton && playButton != null) {
       playButton.requestFocus();
-    } else if (playing && pauseButton != null) {
+    } else if (shouldShowPauseButton && pauseButton != null) {
       pauseButton.requestFocus();
     }
   }
@@ -997,7 +1007,7 @@ public class PlayerControlView extends FrameLayout {
             || (window.isDynamic && !window.isSeekable))) {
       seekTo(player, previousWindowIndex, C.TIME_UNSET);
     } else {
-      seekTo(player, 0);
+      seekTo(player, windowIndex, /* positionMs= */ 0);
     }
   }
 
@@ -1017,27 +1027,24 @@ public class PlayerControlView extends FrameLayout {
 
   private void rewind(Player player) {
     if (player.isCurrentWindowSeekable() && rewindMs > 0) {
-      seekTo(player, player.getCurrentPosition() - rewindMs);
+      seekToOffset(player, -rewindMs);
     }
   }
 
   private void fastForward(Player player) {
     if (player.isCurrentWindowSeekable() && fastForwardMs > 0) {
-      seekTo(player, player.getCurrentPosition() + fastForwardMs);
+      seekToOffset(player, fastForwardMs);
     }
   }
 
-  private void seekTo(Player player, long positionMs) {
-    seekTo(player, player.getCurrentWindowIndex(), positionMs);
-  }
-
-  private boolean seekTo(Player player, int windowIndex, long positionMs) {
+  private void seekToOffset(Player player, long offsetMs) {
+    long positionMs = player.getCurrentPosition() + offsetMs;
     long durationMs = player.getDuration();
     if (durationMs != C.TIME_UNSET) {
       positionMs = Math.min(positionMs, durationMs);
     }
     positionMs = Math.max(positionMs, 0);
-    return controlDispatcher.dispatchSeekTo(player, windowIndex, positionMs);
+    seekTo(player, player.getCurrentWindowIndex(), positionMs);
   }
 
   private void seekToTimeBarPosition(Player player, long positionMs) {
@@ -1067,6 +1074,10 @@ public class PlayerControlView extends FrameLayout {
       // Trigger a progress update to snap it back.
       updateProgress();
     }
+  }
+
+  private boolean seekTo(Player player, int windowIndex, long positionMs) {
+    return controlDispatcher.dispatchSeekTo(player, windowIndex, positionMs);
   }
 
   @Override
@@ -1151,7 +1162,7 @@ public class PlayerControlView extends FrameLayout {
     return true;
   }
 
-  private boolean isPlaying() {
+  private boolean shouldShowPauseButton() {
     return player != null
         && player.getPlaybackState() != Player.STATE_ENDED
         && player.getPlaybackState() != Player.STATE_IDLE
@@ -1222,6 +1233,11 @@ public class PlayerControlView extends FrameLayout {
     }
 
     @Override
+    public void onIsPlayingChanged(boolean isPlaying) {
+      updateProgress();
+    }
+
+    @Override
     public void onRepeatModeChanged(int repeatMode) {
       updateRepeatModeButton();
       updateNavigation();
@@ -1265,7 +1281,7 @@ public class PlayerControlView extends FrameLayout {
             playbackPreparer.preparePlayback();
           }
         } else if (player.getPlaybackState() == Player.STATE_ENDED) {
-          controlDispatcher.dispatchSeekTo(player, player.getCurrentWindowIndex(), C.TIME_UNSET);
+          seekTo(player, player.getCurrentWindowIndex(), C.TIME_UNSET);
         }
         controlDispatcher.dispatchSetPlayWhenReady(player, true);
       } else if (pauseButton == view) {

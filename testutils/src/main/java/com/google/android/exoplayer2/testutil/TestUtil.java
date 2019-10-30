@@ -450,6 +450,7 @@ public class TestUtil {
         && first.windowStartTimeMs == second.windowStartTimeMs
         && first.isSeekable == second.isSeekable
         && first.isDynamic == second.isDynamic
+        && first.isLive == second.isLive
         && first.defaultPositionUs == second.defaultPositionUs
         && first.durationUs == second.durationUs
         && first.firstPeriodIndex == second.firstPeriodIndex

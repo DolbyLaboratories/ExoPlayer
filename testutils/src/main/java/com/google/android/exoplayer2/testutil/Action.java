@@ -15,9 +15,11 @@
  */
 package com.google.android.exoplayer2.testutil;
 
+import android.content.Intent;
 import android.os.Handler;
 import android.view.Surface;
 import androidx.annotation.Nullable;
+import androidx.test.core.app.ApplicationProvider;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayer;
@@ -28,6 +30,7 @@ import com.google.android.exoplayer2.PlayerMessage;
 import com.google.android.exoplayer2.PlayerMessage.Target;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.Timeline;
+import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ShuffleOrder;
 import com.google.android.exoplayer2.testutil.ActionSchedule.ActionNode;
@@ -382,6 +385,26 @@ public abstract class Action {
     }
   }
 
+  /** Broadcasts an {@link Intent}. */
+  public static final class SendBroadcast extends Action {
+    private final Intent intent;
+
+    /**
+     * @param tag A tag to use for logging.
+     * @param intent The {@link Intent} to broadcast.
+     */
+    public SendBroadcast(String tag, Intent intent) {
+      super(tag, "SendBroadcast: " + intent.getAction());
+      this.intent = intent;
+    }
+
+    @Override
+    protected void doActionImpl(
+        SimpleExoPlayer player, DefaultTrackSelector trackSelector, Surface surface) {
+      ApplicationProvider.getApplicationContext().sendBroadcast(intent);
+    }
+  }
+
   /**
    * Updates the {@link Parameters} of a {@link DefaultTrackSelector} to specify whether the
    * renderer at a given index should be disabled.
@@ -440,6 +463,31 @@ public abstract class Action {
     }
   }
 
+  /** Calls {@link SimpleExoPlayer#setAudioAttributes(AudioAttributes, boolean)}. */
+  public static final class SetAudioAttributes extends Action {
+
+    private final AudioAttributes audioAttributes;
+    private final boolean handleAudioFocus;
+
+    /**
+     * @param tag A tag to use for logging.
+     * @param audioAttributes The attributes to use for audio playback.
+     * @param handleAudioFocus True if the player should handle audio focus, false otherwise.
+     */
+    public SetAudioAttributes(
+        String tag, AudioAttributes audioAttributes, boolean handleAudioFocus) {
+      super(tag, "SetAudioAttributes");
+      this.audioAttributes = audioAttributes;
+      this.handleAudioFocus = handleAudioFocus;
+    }
+
+    @Override
+    protected void doActionImpl(
+        SimpleExoPlayer player, DefaultTrackSelector trackSelector, Surface surface) {
+      player.setAudioAttributes(audioAttributes, handleAudioFocus);
+    }
+  }
+
   /** Calls {@link ExoPlayer#prepare()}. */
   public static final class Prepare extends Action {
     /** @param tag A tag to use for logging. */
@@ -459,7 +507,10 @@ public abstract class Action {
 
     @Player.RepeatMode private final int repeatMode;
 
-    /** @param tag A tag to use for logging. */
+    /**
+     * @param tag A tag to use for logging.
+     * @param repeatMode The repeat mode.
+     */
     public SetRepeatMode(String tag, @Player.RepeatMode int repeatMode) {
       super(tag, "SetRepeatMode: " + repeatMode);
       this.repeatMode = repeatMode;
@@ -498,7 +549,10 @@ public abstract class Action {
 
     private final boolean shuffleModeEnabled;
 
-    /** @param tag A tag to use for logging. */
+    /**
+     * @param tag A tag to use for logging.
+     * @param shuffleModeEnabled Whether shuffling is enabled.
+     */
     public SetShuffleModeEnabled(String tag, boolean shuffleModeEnabled) {
       super(tag, "SetShuffleModeEnabled: " + shuffleModeEnabled);
       this.shuffleModeEnabled = shuffleModeEnabled;

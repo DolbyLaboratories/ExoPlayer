@@ -44,10 +44,9 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
-/**
- * Source of Hls (possibly adaptive) chunks.
- */
+/** Source of Hls (possibly adaptive) chunks. */
 /* package */ class HlsChunkSource {
 
   /**
@@ -95,13 +94,13 @@ import java.util.Map;
   private final Format[] playlistFormats;
   private final HlsPlaylistTracker playlistTracker;
   private final TrackGroup trackGroup;
-  private final List<Format> muxedCaptionFormats;
+  @Nullable private final List<Format> muxedCaptionFormats;
   private final FullSegmentEncryptionKeyCache keyCache;
 
   private boolean isTimestampMaster;
   private byte[] scratchSpace;
-  private IOException fatalError;
-  private Uri expectedPlaylistUrl;
+  @Nullable private IOException fatalError;
+  @Nullable private Uri expectedPlaylistUrl;
   private boolean independentSegments;
 
   // Note: The track group in the selection is typically *not* equal to trackGroup. This is due to
@@ -144,6 +143,7 @@ import java.util.Map;
     this.timestampAdjusterProvider = timestampAdjusterProvider;
     this.muxedCaptionFormats = muxedCaptionFormats;
     keyCache = new FullSegmentEncryptionKeyCache();
+    scratchSpace = Util.EMPTY_BYTE_ARRAY;
     liveEdgeInPeriodTimeUs = C.TIME_UNSET;
     mediaDataSource = dataSourceFactory.createDataSource(C.DATA_TYPE_MEDIA);
     if (mediaTransferListener != null) {
@@ -271,6 +271,8 @@ import java.util.Map;
     }
     HlsMediaPlaylist mediaPlaylist =
         playlistTracker.getPlaylistSnapshot(selectedPlaylistUrl, /* isForPlayback= */ true);
+    // playlistTracker snapshot is valid (checked by if() above), so mediaPlaylist must be non-null.
+    Assertions.checkNotNull(mediaPlaylist);
     independentSegments = mediaPlaylist.hasIndependentSegments;
 
     updateLiveEdgeTimeUs(mediaPlaylist);
@@ -286,8 +288,11 @@ import java.util.Map;
         // behind the live window.
         selectedTrackIndex = oldTrackIndex;
         selectedPlaylistUrl = playlistUrls[selectedTrackIndex];
-        mediaPlaylist =
-            playlistTracker.getPlaylistSnapshot(selectedPlaylistUrl, /* isForPlayback= */ true);
+      mediaPlaylist =
+          playlistTracker.getPlaylistSnapshot(selectedPlaylistUrl, /* isForPlayback= */ true);
+      // playlistTracker snapshot is valid (checked by if() above), so mediaPlaylist must be
+      // non-null.
+      Assertions.checkNotNull(mediaPlaylist);
         startOfPlaylistInPeriodUs =
             mediaPlaylist.startTimeUs - playlistTracker.getInitialStartTimeUs();
         chunkMediaSequence = previous.getNextChunkIndex();
@@ -362,7 +367,8 @@ import java.util.Map;
     if (chunk instanceof EncryptionKeyChunk) {
       EncryptionKeyChunk encryptionKeyChunk = (EncryptionKeyChunk) chunk;
       scratchSpace = encryptionKeyChunk.getDataHolder();
-      keyCache.put(encryptionKeyChunk.dataSpec.uri, encryptionKeyChunk.getResult());
+      keyCache.put(
+          encryptionKeyChunk.dataSpec.uri, Assertions.checkNotNull(encryptionKeyChunk.getResult()));
     }
   }
 
@@ -428,6 +434,8 @@ import java.util.Map;
       }
       HlsMediaPlaylist playlist =
           playlistTracker.getPlaylistSnapshot(playlistUrl, /* isForPlayback= */ false);
+      // Playlist snapshot is valid (checked by if() above) so playlist must be non-null.
+      Assertions.checkNotNull(playlist);
       long startOfPlaylistInPeriodUs =
           playlist.startTimeUs - playlistTracker.getInitialStartTimeUs();
       boolean switchingTrack = trackIndex != oldTrackIndex;
@@ -505,11 +513,13 @@ import java.util.Map;
     if (keyUri == null) {
       return null;
     }
-    if (keyCache.containsKey(keyUri)) {
-      // The key is present in the key cache. We re-insert it to prevent it from being evicted by
+
+    byte[] encryptionKey = keyCache.remove(keyUri);
+    if (encryptionKey != null) {
+      // The key was present in the key cache. We re-insert it to prevent it from being evicted by
       // the following key addition. Note that removal of the key is necessary to affect the
       // eviction order.
-      keyCache.put(keyUri, keyCache.remove(keyUri));
+      keyCache.put(keyUri, encryptionKey);
       return null;
     }
     DataSpec dataSpec = new DataSpec(keyUri, 0, C.LENGTH_UNSET, null, DataSpec.FLAG_ALLOW_GZIP);
@@ -577,6 +587,7 @@ import java.util.Map;
     }
 
     @Override
+    @Nullable
     public Object getSelectionData() {
       return null;
     }
@@ -585,14 +596,14 @@ import java.util.Map;
 
   private static final class EncryptionKeyChunk extends DataChunk {
 
-    private byte[] result;
+    private byte @MonotonicNonNull [] result;
 
     public EncryptionKeyChunk(
         DataSource dataSource,
         DataSpec dataSpec,
         Format trackFormat,
         int trackSelectionReason,
-        Object trackSelectionData,
+        @Nullable Object trackSelectionData,
         byte[] scratchSpace) {
       super(dataSource, dataSpec, C.DATA_TYPE_DRM, trackFormat, trackSelectionReason,
           trackSelectionData, scratchSpace);
@@ -603,6 +614,8 @@ import java.util.Map;
       result = Arrays.copyOf(data, limit);
     }
 
+    /** Return the result of this chunk, or null if loading is not complete. */
+    @Nullable
     public byte[] getResult() {
       return result;
     }
@@ -660,29 +673,63 @@ import java.util.Map;
    * addition, once the cache's size exceeds {@link #KEY_CACHE_SIZE}, the oldest item (according to
    * insertion order) is removed.
    */
-  private static final class FullSegmentEncryptionKeyCache extends LinkedHashMap<Uri, byte[]> {
+  private static final class FullSegmentEncryptionKeyCache {
+
+    private final LinkedHashMap<Uri, byte[]> backingMap;
 
     public FullSegmentEncryptionKeyCache() {
-      super(
-          /* initialCapacity= */ KEY_CACHE_SIZE * 2, /* loadFactor= */ 1, /* accessOrder= */ false);
+      backingMap =
+          new LinkedHashMap<Uri, byte[]>(
+              /* initialCapacity= */ KEY_CACHE_SIZE + 1,
+              /* loadFactor= */ 1,
+              /* accessOrder= */ false) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Uri, byte[]> eldest) {
+              return size() > KEY_CACHE_SIZE;
+            }
+          };
     }
 
-    @Override
-    public byte[] get(Object keyUri) {
-      if (keyUri == null) {
+    /**
+     * Returns the {@code encryptionKey} cached against this {@code uri}, or null if {@code uri} is
+     * null or not present in the cache.
+     */
+    @Nullable
+    public byte[] get(@Nullable Uri uri) {
+      if (uri == null) {
         return null;
       }
-      return super.get(keyUri);
+      return backingMap.get(uri);
     }
 
-    @Override
-    public byte[] put(Uri keyUri, byte[] key) {
-      return super.put(keyUri, Assertions.checkNotNull(key));
+    /**
+     * Inserts an entry into the cache.
+     *
+     * @throws NullPointerException if {@code uri} or {@code encryptionKey} are null.
+     */
+    @Nullable
+    public byte[] put(Uri uri, byte[] encryptionKey) {
+      return backingMap.put(Assertions.checkNotNull(uri), Assertions.checkNotNull(encryptionKey));
     }
 
-    @Override
-    protected boolean removeEldestEntry(Map.Entry<Uri, byte[]> entry) {
-      return size() > KEY_CACHE_SIZE;
+    /**
+     * Returns true if {@code uri} is present in the cache.
+     *
+     * @throws NullPointerException if {@code uri} is null.
+     */
+    public boolean containsUri(Uri uri) {
+      return backingMap.containsKey(Assertions.checkNotNull(uri));
+    }
+
+    /**
+     * Removes {@code uri} from the cache. If {@code uri} was present in the cahce, this returns the
+     * corresponding {@code encryptionKey}, otherwise null.
+     *
+     * @throws NullPointerException if {@code uri} is null.
+     */
+    @Nullable
+    public byte[] remove(Uri uri) {
+      return backingMap.remove(Assertions.checkNotNull(uri));
     }
   }
 }

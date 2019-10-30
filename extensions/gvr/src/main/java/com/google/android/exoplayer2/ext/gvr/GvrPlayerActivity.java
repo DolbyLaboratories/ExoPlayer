@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.google.android.exoplayer2.ext.gvr;
 
 import android.content.Context;
@@ -21,11 +20,11 @@ import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.opengl.Matrix;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.ContextThemeWrapper;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.Surface;
+import android.view.View;
 import androidx.annotation.BinderThread;
 import androidx.annotation.CallSuper;
 import androidx.annotation.Nullable;
@@ -33,11 +32,10 @@ import androidx.annotation.UiThread;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.ui.PlayerControlView;
-import com.google.android.exoplayer2.ui.spherical.GlViewGroup;
 import com.google.android.exoplayer2.ui.spherical.PointerRenderer;
 import com.google.android.exoplayer2.ui.spherical.SceneRenderer;
+import com.google.android.exoplayer2.ui.spherical.ViewRenderer;
 import com.google.android.exoplayer2.util.Assertions;
-import com.google.android.exoplayer2.util.Util;
 import com.google.vr.ndk.base.DaydreamApi;
 import com.google.vr.sdk.base.AndroidCompat;
 import com.google.vr.sdk.base.Eye;
@@ -47,56 +45,45 @@ import com.google.vr.sdk.base.HeadTransform;
 import com.google.vr.sdk.base.Viewport;
 import com.google.vr.sdk.controller.Controller;
 import com.google.vr.sdk.controller.ControllerManager;
+import com.google.vr.sdk.controller.Orientation;
 import javax.microedition.khronos.egl.EGLConfig;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
-/**
- * Base activity for VR 360 video playback. Before starting the video playback a player needs to be
- * set using {@link #setPlayer(Player)}.
- */
+/** Base activity for VR 360 video playback. */
 public abstract class GvrPlayerActivity extends GvrActivity {
 
   private static final int EXIT_FROM_VR_REQUEST_CODE = 42;
 
-  private final Handler mainHandler;
-
   @Nullable private Player player;
-  private @MonotonicNonNull GlViewGroup glView;
   private @MonotonicNonNull ControllerManager controllerManager;
   private @MonotonicNonNull SurfaceTexture surfaceTexture;
   private @MonotonicNonNull Surface surface;
-  private @MonotonicNonNull SceneRenderer scene;
-  private @MonotonicNonNull PlayerControlView playerControl;
+  private @MonotonicNonNull SceneRenderer sceneRenderer;
+  private @MonotonicNonNull PlayerControlView playerControlView;
 
-  public GvrPlayerActivity() {
-    mainHandler = new Handler(Looper.getMainLooper());
-  }
-
+  @CallSuper
   @Override
   protected void onCreate(@Nullable Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setScreenAlwaysOn(true);
 
-    GvrView gvrView = new GvrView(this);
-    // Since videos typically have fewer pixels per degree than the phones, reducing the render
-    // target scaling factor reduces the work required to render the scene.
-    gvrView.setRenderTargetScale(.5f);
+    GvrView gvrView = new GvrView(/* context= */ this);
+    gvrView.setRenderTargetScale(getRenderTargetScale());
 
     // If a custom theme isn't specified, the Context's theme is used. For VR Activities, this is
     // the old Android default theme rather than a modern theme. Override this with a custom theme.
-    Context theme = new ContextThemeWrapper(this, R.style.VrTheme);
-    glView = new GlViewGroup(theme, R.layout.vr_ui);
+    Context theme = new ContextThemeWrapper(this, R.style.ExoVrTheme);
+    View viewGroup = LayoutInflater.from(theme).inflate(R.layout.exo_vr_ui, /* root= */ null);
 
-    playerControl = Assertions.checkNotNull(glView.findViewById(R.id.controller));
-    playerControl.setShowVrButton(true);
-    playerControl.setVrButtonListener(v -> exit());
+    ViewRenderer viewRenderer = new ViewRenderer(/* context= */ this, gvrView, viewGroup);
 
+    playerControlView = Assertions.checkNotNull(viewGroup.findViewById(R.id.controller));
+    playerControlView.setShowVrButton(true);
+    playerControlView.setVrButtonListener(v -> exit());
+
+    sceneRenderer = new SceneRenderer();
     PointerRenderer pointerRenderer = new PointerRenderer();
-    scene = new SceneRenderer();
-    Renderer renderer = new Renderer(scene, glView, pointerRenderer);
-
-    // Attach glView to gvrView in order to properly handle UI events.
-    gvrView.addView(glView, 0);
+    Renderer renderer = new Renderer(sceneRenderer, pointerRenderer, viewRenderer);
 
     // Standard GvrView configuration
     gvrView.setEGLConfigChooser(
@@ -106,78 +93,21 @@ public abstract class GvrPlayerActivity extends GvrActivity {
     gvrView.setRenderer(renderer);
     setContentView(gvrView);
 
-    // Most Daydream phones can render a 4k video at 60fps in sustained performance mode. These
-    // options can be tweaked along with the render target scale.
     if (gvrView.setAsyncReprojectionEnabled(true)) {
-      AndroidCompat.setSustainedPerformanceMode(this, true);
+      AndroidCompat.setSustainedPerformanceMode(/* activity= */ this, true);
     }
 
     // Handle the user clicking on the 'X' in the top left corner. Since this is done when the user
     // has taken the headset out of VR, it should launch the app's exit flow directly rather than
-    // using the transition flow.
+    // using Daydream's exit transition.
     gvrView.setOnCloseButtonListener(this::finish);
 
-    ControllerManager.EventListener listener =
-        new ControllerManager.EventListener() {
-          @Override
-          public void onApiStatusChanged(int status) {
-            // Do nothing.
-          }
-
-          @Override
-          public void onRecentered() {
-            // TODO if in cardboard mode call gvrView.recenterHeadTracker();
-            glView.post(() -> Util.castNonNull(playerControl).show());
-          }
-        };
-    controllerManager = new ControllerManager(this, listener);
-
+    controllerManager =
+        new ControllerManager(/* context= */ this, new ControllerManagerEventListener());
     Controller controller = controllerManager.getController();
     ControllerEventListener controllerEventListener =
-        new ControllerEventListener(controller, pointerRenderer, glView);
+        new ControllerEventListener(controller, pointerRenderer, viewRenderer);
     controller.setEventListener(controllerEventListener);
-  }
-
-  /**
-   * Sets the {@link Player} to use.
-   *
-   * @param newPlayer The {@link Player} to use, or {@code null} to detach the current player.
-   */
-  protected void setPlayer(@Nullable Player newPlayer) {
-    Assertions.checkNotNull(scene);
-    if (player == newPlayer) {
-      return;
-    }
-    if (player != null) {
-      Player.VideoComponent videoComponent = player.getVideoComponent();
-      if (videoComponent != null) {
-        if (surface != null) {
-          videoComponent.clearVideoSurface(surface);
-        }
-        videoComponent.clearVideoFrameMetadataListener(scene);
-        videoComponent.clearCameraMotionListener(scene);
-      }
-    }
-    player = newPlayer;
-    if (player != null) {
-      Player.VideoComponent videoComponent = player.getVideoComponent();
-      if (videoComponent != null) {
-        videoComponent.setVideoFrameMetadataListener(scene);
-        videoComponent.setCameraMotionListener(scene);
-        videoComponent.setVideoSurface(surface);
-      }
-    }
-    Assertions.checkNotNull(playerControl).setPlayer(player);
-  }
-
-  /**
-   * Sets the default stereo mode. If the played video doesn't contain a stereo mode the default one
-   * is used.
-   *
-   * @param stereoMode A {@link C.StereoMode} value.
-   */
-  protected void setDefaultStereoMode(@C.StereoMode int stereoMode) {
-    Assertions.checkNotNull(scene).setDefaultStereoMode(stereoMode);
   }
 
   @CallSuper
@@ -188,34 +118,72 @@ public abstract class GvrPlayerActivity extends GvrActivity {
     }
   }
 
+  @CallSuper
   @Override
   protected void onResume() {
     super.onResume();
-    Util.castNonNull(controllerManager).start();
+    player = createPlayer();
+    Player.VideoComponent videoComponent = player.getVideoComponent();
+    if (videoComponent != null) {
+      videoComponent.setVideoFrameMetadataListener(Assertions.checkNotNull(sceneRenderer));
+      videoComponent.setCameraMotionListener(sceneRenderer);
+      videoComponent.setVideoSurface(surface);
+    }
+    Assertions.checkNotNull(playerControlView).setPlayer(player);
+    Assertions.checkNotNull(controllerManager).start();
   }
 
+  @CallSuper
   @Override
   protected void onPause() {
-    Util.castNonNull(controllerManager).stop();
+    Assertions.checkNotNull(controllerManager).stop();
+    Assertions.checkNotNull(playerControlView).setPlayer(null);
+    Assertions.checkNotNull(player).release();
+    player = null;
     super.onPause();
   }
 
+  @CallSuper
   @Override
   protected void onDestroy() {
-    setPlayer(null);
     releaseSurface(surfaceTexture, surface);
     super.onDestroy();
+  }
+
+  /**
+   * Called by {@link #onCreate(Bundle)} to get the render target scale value that will be passed to
+   * {@link GvrView#setRenderTargetScale(float)}. Since videos typically have fewer pixels per
+   * degree than the phone displays, the target can normally be lower than 1 to reduce the amount of
+   * work required to render the scene. The default value is 0.5.
+   *
+   * @return The render target scale value that will be passed to {@link
+   *     GvrView#setRenderTargetScale(float)}.
+   */
+  protected float getRenderTargetScale() {
+    return 0.5f;
+  }
+
+  /** Called by {@link #onResume()} to create a player instance for this activity to use. */
+  protected abstract Player createPlayer();
+
+  /**
+   * Sets the stereo mode that will be used for video content that does not specify its own mode.
+   *
+   * @param stereoMode The default {@link C.StereoMode}.
+   */
+  protected void setDefaultStereoMode(@C.StereoMode int stereoMode) {
+    Assertions.checkNotNull(sceneRenderer).setDefaultStereoMode(stereoMode);
   }
 
   /** Tries to exit gracefully from VR using a VR transition dialog. */
   @SuppressWarnings("nullness:argument.type.incompatible")
   protected void exit() {
-    // This needs to use GVR's exit transition to avoid disorienting the user.
-    DaydreamApi api = DaydreamApi.create(this);
-    if (api != null) {
-      api.exitFromVr(this, EXIT_FROM_VR_REQUEST_CODE, null);
-      // Eventually, the Activity's onActivityResult will be called.
-      api.close();
+    DaydreamApi daydreamApi = DaydreamApi.create(this);
+    if (daydreamApi != null) {
+      // Use Daydream's exit transition to avoid disorienting the user. This will cause
+      // onActivityResult to be called.
+      daydreamApi.exitFromVr(/* activity= */ this, EXIT_FROM_VR_REQUEST_CODE, /* data= */ null);
+      daydreamApi.close();
     } else {
       finish();
     }
@@ -224,16 +192,16 @@ public abstract class GvrPlayerActivity extends GvrActivity {
   /** Toggles PlayerControl visibility. */
   @UiThread
   protected void togglePlayerControlVisibility() {
-    if (Assertions.checkNotNull(playerControl).isVisible()) {
-      playerControl.hide();
+    if (Assertions.checkNotNull(playerControlView).isVisible()) {
+      playerControlView.hide();
     } else {
-      playerControl.show();
+      playerControlView.show();
     }
   }
 
-  // Called on GL thread.
   private void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture) {
-    mainHandler.post(
+    // Called on the GL thread. Post to the main thread.
+    runOnUiThread(
         () -> {
           SurfaceTexture oldSurfaceTexture = this.surfaceTexture;
           Surface oldSurface = this.surface;
@@ -260,18 +228,20 @@ public abstract class GvrPlayerActivity extends GvrActivity {
   }
 
   private class Renderer implements GvrView.StereoRenderer {
-    private static final float Z_NEAR = .1f;
+    private static final float Z_NEAR = 0.1f;
     private static final float Z_FAR = 100;
 
-    private final float[] viewProjectionMatrix = new float[16];
-    private final SceneRenderer scene;
-    private final GlViewGroup glView;
+    private final SceneRenderer sceneRenderer;
     private final PointerRenderer pointerRenderer;
+    private final ViewRenderer viewRenderer;
+    private final float[] viewProjectionMatrix;
 
-    public Renderer(SceneRenderer scene, GlViewGroup glView, PointerRenderer pointerRenderer) {
-      this.scene = scene;
-      this.glView = glView;
+    public Renderer(
+        SceneRenderer sceneRenderer, PointerRenderer pointerRenderer, ViewRenderer viewRenderer) {
+      this.sceneRenderer = sceneRenderer;
       this.pointerRenderer = pointerRenderer;
+      this.viewRenderer = viewRenderer;
+      viewProjectionMatrix = new float[16];
     }
 
     @Override
@@ -281,9 +251,9 @@ public abstract class GvrPlayerActivity extends GvrActivity {
     public void onDrawEye(Eye eye) {
       Matrix.multiplyMM(
           viewProjectionMatrix, 0, eye.getPerspective(Z_NEAR, Z_FAR), 0, eye.getEyeView(), 0);
-      scene.drawFrame(viewProjectionMatrix, eye.getType() == Eye.Type.RIGHT);
-      if (glView.isVisible()) {
-        glView.getRenderer().draw(viewProjectionMatrix);
+      sceneRenderer.drawFrame(viewProjectionMatrix, eye.getType() == Eye.Type.RIGHT);
+      if (viewRenderer.isVisible()) {
+        viewRenderer.draw(viewProjectionMatrix);
         pointerRenderer.draw(viewProjectionMatrix);
       }
     }
@@ -293,8 +263,8 @@ public abstract class GvrPlayerActivity extends GvrActivity {
 
     @Override
     public void onSurfaceCreated(EGLConfig config) {
-      onSurfaceTextureAvailable(scene.init());
-      glView.getRenderer().init();
+      onSurfaceTextureAvailable(sceneRenderer.init());
+      viewRenderer.init();
       pointerRenderer.init();
     }
 
@@ -303,9 +273,9 @@ public abstract class GvrPlayerActivity extends GvrActivity {
 
     @Override
     public void onRendererShutdown() {
-      glView.getRenderer().shutdown();
+      viewRenderer.shutdown();
       pointerRenderer.shutdown();
-      scene.shutdown();
+      sceneRenderer.shutdown();
     }
   }
 
@@ -313,16 +283,16 @@ public abstract class GvrPlayerActivity extends GvrActivity {
 
     private final Controller controller;
     private final PointerRenderer pointerRenderer;
-    private final GlViewGroup glView;
+    private final ViewRenderer viewRenderer;
     private final float[] controllerOrientationMatrix;
     private boolean clickButtonDown;
     private boolean appButtonDown;
 
     public ControllerEventListener(
-        Controller controller, PointerRenderer pointerRenderer, GlViewGroup glView) {
+        Controller controller, PointerRenderer pointerRenderer, ViewRenderer viewRenderer) {
       this.controller = controller;
       this.pointerRenderer = pointerRenderer;
-      this.glView = glView;
+      this.viewRenderer = viewRenderer;
       controllerOrientationMatrix = new float[16];
     }
 
@@ -330,7 +300,8 @@ public abstract class GvrPlayerActivity extends GvrActivity {
     @BinderThread
     public void onUpdate() {
       controller.update();
-      controller.orientation.toRotationMatrix(controllerOrientationMatrix);
+      Orientation orientation = controller.orientation;
+      orientation.toRotationMatrix(controllerOrientationMatrix);
       pointerRenderer.setControllerOrientation(controllerOrientationMatrix);
 
       if (clickButtonDown || controller.clickButtonState) {
@@ -341,18 +312,33 @@ public abstract class GvrPlayerActivity extends GvrActivity {
         } else {
           action = MotionEvent.ACTION_MOVE;
         }
-        glView.post(
-            () -> {
-              float[] angles = controller.orientation.toYawPitchRollRadians(new float[3]);
-              boolean clickedOnView = glView.simulateClick(action, angles[0], angles[1]);
-              if (action == MotionEvent.ACTION_DOWN && !clickedOnView) {
-                togglePlayerControlVisibility();
-              }
-            });
+        float[] yawPitchRoll = orientation.toYawPitchRollRadians(new float[3]);
+        runOnUiThread(() -> dispatchClick(action, yawPitchRoll[0], yawPitchRoll[1]));
       } else if (!appButtonDown && controller.appButtonState) {
-        glView.post(GvrPlayerActivity.this::togglePlayerControlVisibility);
+        runOnUiThread(GvrPlayerActivity.this::togglePlayerControlVisibility);
       }
       appButtonDown = controller.appButtonState;
+    }
+
+    private void dispatchClick(int action, float yaw, float pitch) {
+      boolean clickedOnView = viewRenderer.simulateClick(action, yaw, pitch);
+      if (action == MotionEvent.ACTION_DOWN && !clickedOnView) {
+        togglePlayerControlVisibility();
+      }
+    }
+  }
+
+  private final class ControllerManagerEventListener implements ControllerManager.EventListener {
+
+    @Override
+    public void onApiStatusChanged(int status) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onRecentered() {
+      // TODO: If in cardboard mode call gvrView.recenterHeadTracker().
+      runOnUiThread(() -> Assertions.checkNotNull(playerControlView).show());
     }
   }
 }

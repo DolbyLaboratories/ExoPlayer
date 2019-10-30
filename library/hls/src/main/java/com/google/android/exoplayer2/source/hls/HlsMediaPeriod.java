@@ -75,6 +75,7 @@ public final class HlsMediaPeriod implements MediaPeriod, HlsSampleStreamWrapper
   private final TimestampAdjusterProvider timestampAdjusterProvider;
   private final CompositeSequenceableLoaderFactory compositeSequenceableLoaderFactory;
   private final boolean allowChunklessPreparation;
+  private final @HlsMetadataType int metadataType;
   private final boolean useSessionKeys;
 
   @Nullable private Callback callback;
@@ -117,6 +118,7 @@ public final class HlsMediaPeriod implements MediaPeriod, HlsSampleStreamWrapper
       Allocator allocator,
       CompositeSequenceableLoaderFactory compositeSequenceableLoaderFactory,
       boolean allowChunklessPreparation,
+      @HlsMetadataType int metadataType,
       boolean useSessionKeys) {
     this.extractorFactory = extractorFactory;
     this.playlistTracker = playlistTracker;
@@ -128,6 +130,7 @@ public final class HlsMediaPeriod implements MediaPeriod, HlsSampleStreamWrapper
     this.allocator = allocator;
     this.compositeSequenceableLoaderFactory = compositeSequenceableLoaderFactory;
     this.allowChunklessPreparation = allowChunklessPreparation;
+    this.metadataType = metadataType;
     this.useSessionKeys = useSessionKeys;
     compositeSequenceableLoader =
         compositeSequenceableLoaderFactory.createCompositeSequenceableLoader();
@@ -357,6 +360,11 @@ public final class HlsMediaPeriod implements MediaPeriod, HlsSampleStreamWrapper
     } else {
       return compositeSequenceableLoader.continueLoading(positionUs);
     }
+  }
+
+  @Override
+  public boolean isLoading() {
+    return compositeSequenceableLoader.isLoading();
   }
 
   @Override
@@ -727,7 +735,7 @@ public final class HlsMediaPeriod implements MediaPeriod, HlsSampleStreamWrapper
       Uri[] playlistUrls,
       Format[] playlistFormats,
       Format muxedAudioFormat,
-      List<Format> muxedCaptionFormats,
+      @Nullable List<Format> muxedCaptionFormats,
       Map<String, DrmInitData> overridingDrmInitData,
       long positionUs) {
     HlsChunkSource defaultChunkSource =
@@ -750,7 +758,8 @@ public final class HlsMediaPeriod implements MediaPeriod, HlsSampleStreamWrapper
         muxedAudioFormat,
         drmSessionManager,
         loadErrorHandlingPolicy,
-        eventDispatcher);
+        eventDispatcher,
+        metadataType);
   }
 
   private static Map<String, DrmInitData> deriveOverridingDrmInitData(

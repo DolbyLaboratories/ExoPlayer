@@ -21,6 +21,7 @@ import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.BasePlayer;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
+import com.google.android.exoplayer2.ExoPlayerLibraryInfo;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.Timeline;
@@ -50,14 +51,14 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 
 /**
  * {@link Player} implementation that communicates with a Cast receiver app.
  *
  * <p>The behavior of this class depends on the underlying Cast session, which is obtained from the
- * Cast context passed to {@link #CastPlayer}. To keep track of the session, {@link
- * #isCastSessionAvailable()} can be queried and {@link SessionAvailabilityListener} can be
- * implemented and attached to the player.
+ * injected {@link CastContext}. To keep track of the session, {@link #isCastSessionAvailable()} can
+ * be queried and {@link SessionAvailabilityListener} can be implemented and attached to the player.
  *
  * <p>If no session is available, the player state will remain unchanged and calls to methods that
  * alter it will be ignored. Querying the player state is possible even when no session is
@@ -66,6 +67,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>Methods should be called on the application's main thread.
  */
 public final class CastPlayer extends BasePlayer {
+
+  static {
+    ExoPlayerLibraryInfo.registerModule("goog.exo.cast");
+  }
 
   private static final String TAG = "CastPlayer";
 
@@ -132,7 +137,7 @@ public final class CastPlayer extends BasePlayer {
     currentTrackSelection = EMPTY_TRACK_SELECTION_ARRAY;
     pendingSeekWindowIndex = C.INDEX_UNSET;
     pendingSeekPositionMs = C.TIME_UNSET;
-    updateInternalState();
+    updateInternalStateAndNotifyIfChanged();
   }
 
   // Media Queue manipulation methods.
@@ -321,7 +326,7 @@ public final class CastPlayer extends BasePlayer {
   }
 
   @Override
-  @State
+  @Player.State
   public int getPlaybackState() {
     return playbackState;
   }
@@ -343,11 +348,20 @@ public final class CastPlayer extends BasePlayer {
     if (remoteMediaClient == null) {
       return;
     }
-    if (playWhenReady) {
-      remoteMediaClient.play();
-    } else {
-      remoteMediaClient.pause();
-    }
+    // We update the local state and send the message to the receiver app, which will cause the
+    // operation to be perceived as synchronous by the user. When the operation reports a result,
+    // the local state will be updated to reflect the state reported by the Cast SDK.
+    setPlayerStateAndNotifyIfChanged(playWhenReady, playbackState);
+    flushNotifications();
+    PendingResult<MediaChannelResult> pendingResult =
+        playWhenReady ? remoteMediaClient.play() : remoteMediaClient.pause();
+    pendingResult.setResultCallback(
+        mediaChannelResult -> {
+          if (remoteMediaClient != null) {
+            updatePlayerStateAndNotifyIfChanged();
+            flushNotifications();
+          }
+        });
   }
 
   @Override
@@ -428,9 +442,23 @@ public final class CastPlayer extends BasePlayer {
 
   @Override
   public void setRepeatMode(@RepeatMode int repeatMode) {
-    if (remoteMediaClient != null) {
-      remoteMediaClient.queueSetRepeatMode(getCastRepeatMode(repeatMode), null);
+    if (remoteMediaClient == null) {
+      return;
     }
+    // We update the local state and send the message to the receiver app, which will cause the
+    // operation to be perceived as synchronous by the user. When the operation reports a result,
+    // the local state will be updated to reflect the state reported by the Cast SDK.
+    setRepeatModeAndNotifyIfChanged(repeatMode);
+    flushNotifications();
+    remoteMediaClient
+        .queueSetRepeatMode(getCastRepeatMode(repeatMode), /* jsonObject= */ null)
+        .setResultCallback(
+            mediaChannelResult -> {
+              if (remoteMediaClient != null) {
+                updateRepeatModeAndNotifyIfChanged();
+                flushNotifications();
+              }
+            });
   }
 
   @Override
@@ -536,35 +564,20 @@ public final class CastPlayer extends BasePlayer {
 
   // Internal methods.
 
-  private void updateInternalState() {
+  private void updateInternalStateAndNotifyIfChanged() {
     if (remoteMediaClient == null) {
       // There is no session. We leave the state of the player as it is now.
       return;
     }
-
     boolean wasPlaying = playbackState == Player.STATE_READY && playWhenReady;
-    int playbackState = fetchPlaybackState(remoteMediaClient);
-    boolean playWhenReady = !remoteMediaClient.isPaused();
-    if (this.playbackState != playbackState
-        || this.playWhenReady != playWhenReady) {
-      this.playbackState = playbackState;
-      this.playWhenReady = playWhenReady;
-      notificationsBatch.add(
-          new ListenerNotificationTask(
-              listener -> listener.onPlayerStateChanged(this.playWhenReady, this.playbackState)));
-    }
+    updatePlayerStateAndNotifyIfChanged();
     boolean isPlaying = playbackState == Player.STATE_READY && playWhenReady;
     if (wasPlaying != isPlaying) {
       notificationsBatch.add(
           new ListenerNotificationTask(listener -> listener.onIsPlayingChanged(isPlaying)));
     }
-    @RepeatMode int repeatMode = fetchRepeatMode(remoteMediaClient);
-    if (this.repeatMode != repeatMode) {
-      this.repeatMode = repeatMode;
-      notificationsBatch.add(
-          new ListenerNotificationTask(listener -> listener.onRepeatModeChanged(this.repeatMode)));
-    }
-    maybeUpdateTimelineAndNotify();
+    updateRepeatModeAndNotifyIfChanged();
+    updateTimelineAndNotifyIfChanged();
 
     int currentWindowIndex = C.INDEX_UNSET;
     MediaQueueItem currentItem = remoteMediaClient.getCurrentItem();
@@ -582,7 +595,7 @@ public final class CastPlayer extends BasePlayer {
               listener ->
                   listener.onPositionDiscontinuity(DISCONTINUITY_REASON_PERIOD_TRANSITION)));
     }
-    if (updateTracksAndSelections()) {
+    if (updateTracksAndSelectionsAndNotifyIfChanged()) {
       notificationsBatch.add(
           new ListenerNotificationTask(
               listener -> listener.onTracksChanged(currentTrackGroups, currentTrackSelection)));
@@ -590,7 +603,18 @@ public final class CastPlayer extends BasePlayer {
     flushNotifications();
   }
 
-  private void maybeUpdateTimelineAndNotify() {
+  @RequiresNonNull("remoteMediaClient")
+  private void updatePlayerStateAndNotifyIfChanged() {
+    setPlayerStateAndNotifyIfChanged(
+        !remoteMediaClient.isPaused(), fetchPlaybackState(remoteMediaClient));
+  }
+
+  @RequiresNonNull("remoteMediaClient")
+  private void updateRepeatModeAndNotifyIfChanged() {
+    setRepeatModeAndNotifyIfChanged(fetchRepeatMode(remoteMediaClient));
+  }
+
+  private void updateTimelineAndNotifyIfChanged() {
     if (updateTimeline()) {
       // TODO: Differentiate TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED and
       //     TIMELINE_CHANGE_REASON_SOURCE_UPDATE [see internal: b/65152553].
@@ -615,10 +639,8 @@ public final class CastPlayer extends BasePlayer {
     return !oldTimeline.equals(currentTimeline);
   }
 
-  /**
-   * Updates the internal tracks and selection and returns whether they have changed.
-   */
-  private boolean updateTracksAndSelections() {
+  /** Updates the internal tracks and selection and returns whether they have changed. */
+  private boolean updateTracksAndSelectionsAndNotifyIfChanged() {
     if (remoteMediaClient == null) {
       // There is no session. We leave the state of the player as it is now.
       return false;
@@ -664,6 +686,25 @@ public final class CastPlayer extends BasePlayer {
     return false;
   }
 
+  private void setRepeatModeAndNotifyIfChanged(@Player.RepeatMode int repeatMode) {
+    if (this.repeatMode != repeatMode) {
+      this.repeatMode = repeatMode;
+      notificationsBatch.add(
+          new ListenerNotificationTask(listener -> listener.onRepeatModeChanged(repeatMode)));
+    }
+  }
+
+  private void setPlayerStateAndNotifyIfChanged(
+      boolean playWhenReady, @Player.State int playbackState) {
+    if (this.playWhenReady != playWhenReady || this.playbackState != playbackState) {
+      this.playWhenReady = playWhenReady;
+      this.playbackState = playbackState;
+      notificationsBatch.add(
+          new ListenerNotificationTask(
+              listener -> listener.onPlayerStateChanged(playWhenReady, playbackState)));
+    }
+  }
+
   private void setRemoteMediaClient(@Nullable RemoteMediaClient remoteMediaClient) {
     if (this.remoteMediaClient == remoteMediaClient) {
       // Do nothing.
@@ -680,7 +721,7 @@ public final class CastPlayer extends BasePlayer {
       }
       remoteMediaClient.addListener(statusListener);
       remoteMediaClient.addProgressListener(statusListener, PROGRESS_REPORT_PERIOD_MS);
-      updateInternalState();
+      updateInternalStateAndNotifyIfChanged();
     } else {
       if (sessionAvailabilityListener != null) {
         sessionAvailabilityListener.onCastSessionUnavailable();
@@ -767,8 +808,26 @@ public final class CastPlayer extends BasePlayer {
     }
   }
 
-  private final class StatusListener implements RemoteMediaClient.Listener,
-      SessionManagerListener<CastSession>, RemoteMediaClient.ProgressListener {
+  private void flushNotifications() {
+    boolean recursiveNotification = !ongoingNotificationsTasks.isEmpty();
+    ongoingNotificationsTasks.addAll(notificationsBatch);
+    notificationsBatch.clear();
+    if (recursiveNotification) {
+      // This will be handled once the current notification task is finished.
+      return;
+    }
+    while (!ongoingNotificationsTasks.isEmpty()) {
+      ongoingNotificationsTasks.peekFirst().execute();
+      ongoingNotificationsTasks.removeFirst();
+    }
+  }
+
+  // Internal classes.
+
+  private final class StatusListener
+      implements RemoteMediaClient.Listener,
+          SessionManagerListener<CastSession>,
+          RemoteMediaClient.ProgressListener {
 
     // RemoteMediaClient.ProgressListener implementation.
 
@@ -781,7 +840,7 @@ public final class CastPlayer extends BasePlayer {
 
     @Override
     public void onStatusUpdated() {
-      updateInternalState();
+      updateInternalStateAndNotifyIfChanged();
     }
 
     @Override
@@ -789,7 +848,7 @@ public final class CastPlayer extends BasePlayer {
 
     @Override
     public void onQueueStatusUpdated() {
-      maybeUpdateTimelineAndNotify();
+      updateTimelineAndNotifyIfChanged();
     }
 
     @Override
@@ -852,24 +911,6 @@ public final class CastPlayer extends BasePlayer {
 
   }
 
-  // Internal methods.
-
-  private void flushNotifications() {
-    boolean recursiveNotification = !ongoingNotificationsTasks.isEmpty();
-    ongoingNotificationsTasks.addAll(notificationsBatch);
-    notificationsBatch.clear();
-    if (recursiveNotification) {
-      // This will be handled once the current notification task is finished.
-      return;
-    }
-    while (!ongoingNotificationsTasks.isEmpty()) {
-      ongoingNotificationsTasks.peekFirst().execute();
-      ongoingNotificationsTasks.removeFirst();
-    }
-  }
-
-  // Internal classes.
-
   private final class SeekResultCallback implements ResultCallback<MediaChannelResult> {
 
     @Override
@@ -904,5 +945,4 @@ public final class CastPlayer extends BasePlayer {
       }
     }
   }
-
 }
