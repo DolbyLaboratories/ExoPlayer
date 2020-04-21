@@ -18,6 +18,7 @@ package com.google.android.exoplayer2.source.dash.manifest;
 import static com.google.common.truth.Truth.assertThat;
 
 import android.net.Uri;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.offline.StreamKey;
 import com.google.android.exoplayer2.source.dash.manifest.SegmentBase.SingleSegmentBase;
@@ -27,18 +28,17 @@ import java.util.List;
 import java.util.Random;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
 /** Unit tests for {@link DashManifest}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public class DashManifestTest {
 
   private static final UtcTimingElement DUMMY_UTC_TIMING = new UtcTimingElement("", "");
   private static final SingleSegmentBase DUMMY_SEGMENT_BASE = new SingleSegmentBase();
-  private static final Format DUMMY_FORMAT = Format.createSampleFormat("", "", 0);
+  private static final Format DUMMY_FORMAT = new Format.Builder().build();
 
   @Test
-  public void testCopy() throws Exception {
+  public void copy() {
     Representation[][][] representations = newRepresentations(3, 2, 3);
     DashManifest sourceManifest =
         newDashManifest(
@@ -97,7 +97,7 @@ public class DashManifestTest {
   }
 
   @Test
-  public void testCopySameAdaptationIndexButDifferentPeriod() throws Exception {
+  public void copySameAdaptationIndexButDifferentPeriod() {
     Representation[][][] representations = newRepresentations(2, 1, 1);
     DashManifest sourceManifest =
         newDashManifest(
@@ -117,7 +117,7 @@ public class DashManifestTest {
   }
 
   @Test
-  public void testCopySkipPeriod() throws Exception {
+  public void copySkipPeriod() {
     Representation[][][] representations = newRepresentations(3, 2, 3);
     DashManifest sourceManifest =
         newDashManifest(
@@ -239,6 +239,12 @@ public class DashManifestTest {
   }
 
   private static AdaptationSet newAdaptationSet(int seed, Representation... representations) {
-    return new AdaptationSet(++seed, ++seed, Arrays.asList(representations), null, null);
+    return new AdaptationSet(
+        ++seed,
+        ++seed,
+        Arrays.asList(representations),
+        /* accessibilityDescriptors= */ Collections.emptyList(),
+        /* essentialProperties= */ Collections.emptyList(),
+        /* supplementalProperties= */ Collections.emptyList());
   }
 }

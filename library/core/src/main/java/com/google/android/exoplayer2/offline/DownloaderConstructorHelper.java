@@ -15,12 +15,12 @@
  */
 package com.google.android.exoplayer2.offline;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.upstream.DataSink;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DummyDataSource;
-import com.google.android.exoplayer2.upstream.FileDataSourceFactory;
+import com.google.android.exoplayer2.upstream.FileDataSource;
 import com.google.android.exoplayer2.upstream.PriorityDataSourceFactory;
 import com.google.android.exoplayer2.upstream.cache.Cache;
 import com.google.android.exoplayer2.upstream.cache.CacheDataSink;
@@ -28,14 +28,11 @@ import com.google.android.exoplayer2.upstream.cache.CacheDataSinkFactory;
 import com.google.android.exoplayer2.upstream.cache.CacheDataSource;
 import com.google.android.exoplayer2.upstream.cache.CacheDataSourceFactory;
 import com.google.android.exoplayer2.upstream.cache.CacheKeyFactory;
-import com.google.android.exoplayer2.upstream.cache.CacheUtil;
 import com.google.android.exoplayer2.util.PriorityTaskManager;
 
 /** A helper class that holds necessary parameters for {@link Downloader} construction. */
 public final class DownloaderConstructorHelper {
 
-  private final Cache cache;
-  @Nullable private final CacheKeyFactory cacheKeyFactory;
   @Nullable private final PriorityTaskManager priorityTaskManager;
   private final CacheDataSourceFactory onlineCacheDataSourceFactory;
   private final CacheDataSourceFactory offlineCacheDataSourceFactory;
@@ -59,7 +56,8 @@ public final class DownloaderConstructorHelper {
    * @param upstreamFactory A {@link DataSource.Factory} for creating {@link DataSource}s for
    *     downloading data.
    * @param cacheReadDataSourceFactory A {@link DataSource.Factory} for creating {@link DataSource}s
-   *     for reading data from the cache. If null then a {@link FileDataSourceFactory} will be used.
+   *     for reading data from the cache. If null then a {@link FileDataSource.Factory} will be
+   *     used.
    * @param cacheWriteDataSinkFactory A {@link DataSink.Factory} for creating {@link DataSource}s
    *     for writing data to the cache. If null then a {@link CacheDataSinkFactory} will be used.
    * @param priorityTaskManager A {@link PriorityTaskManager} to use when downloading. If non-null,
@@ -86,7 +84,8 @@ public final class DownloaderConstructorHelper {
    * @param upstreamFactory A {@link DataSource.Factory} for creating {@link DataSource}s for
    *     downloading data.
    * @param cacheReadDataSourceFactory A {@link DataSource.Factory} for creating {@link DataSource}s
-   *     for reading data from the cache. If null then a {@link FileDataSourceFactory} will be used.
+   *     for reading data from the cache. If null then a {@link FileDataSource.Factory} will be
+   *     used.
    * @param cacheWriteDataSinkFactory A {@link DataSink.Factory} for creating {@link DataSource}s
    *     for writing data to the cache. If null then a {@link CacheDataSinkFactory} will be used.
    * @param priorityTaskManager A {@link PriorityTaskManager} to use when downloading. If non-null,
@@ -108,12 +107,10 @@ public final class DownloaderConstructorHelper {
     DataSource.Factory readDataSourceFactory =
         cacheReadDataSourceFactory != null
             ? cacheReadDataSourceFactory
-            : new FileDataSourceFactory();
+            : new FileDataSource.Factory();
     if (cacheWriteDataSinkFactory == null) {
-      CacheDataSinkFactory factory =
+      cacheWriteDataSinkFactory =
           new CacheDataSinkFactory(cache, CacheDataSink.DEFAULT_FRAGMENT_SIZE);
-      factory.experimental_setRespectCacheFragmentationFlag(true);
-      cacheWriteDataSinkFactory = factory;
     }
     onlineCacheDataSourceFactory =
         new CacheDataSourceFactory(
@@ -133,19 +130,7 @@ public final class DownloaderConstructorHelper {
             CacheDataSource.FLAG_BLOCK_ON_CACHE,
             /* eventListener= */ null,
             cacheKeyFactory);
-    this.cache = cache;
     this.priorityTaskManager = priorityTaskManager;
-    this.cacheKeyFactory = cacheKeyFactory;
-  }
-
-  /** Returns the {@link Cache} instance. */
-  public Cache getCache() {
-    return cache;
-  }
-
-  /** Returns the {@link CacheKeyFactory}. */
-  public CacheKeyFactory getCacheKeyFactory() {
-    return cacheKeyFactory != null ? cacheKeyFactory : CacheUtil.DEFAULT_CACHE_KEY_FACTORY;
   }
 
   /** Returns a {@link PriorityTaskManager} instance. */

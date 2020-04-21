@@ -19,6 +19,7 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -28,10 +29,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.RobolectricTestRunner;
 
 /** Tests for {@link ByteArrayUploadDataProvider}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public final class ByteArrayUploadDataProviderTest {
 
   private static final byte[] TEST_DATA = new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -48,18 +48,18 @@ public final class ByteArrayUploadDataProviderTest {
   }
 
   @Test
-  public void testGetLength() {
+  public void getLength() {
     assertThat(byteArrayUploadDataProvider.getLength()).isEqualTo(TEST_DATA.length);
   }
 
   @Test
-  public void testReadFullBuffer() throws IOException {
+  public void readFullBuffer() throws IOException {
     byteArrayUploadDataProvider.read(mockUploadDataSink, byteBuffer);
     assertThat(byteBuffer.array()).isEqualTo(TEST_DATA);
   }
 
   @Test
-  public void testReadPartialBuffer() throws IOException {
+  public void readPartialBuffer() throws IOException {
     byte[] firstHalf = Arrays.copyOf(TEST_DATA, TEST_DATA.length / 2);
     byte[] secondHalf = Arrays.copyOfRange(TEST_DATA, TEST_DATA.length / 2, TEST_DATA.length);
     byteBuffer = ByteBuffer.allocate(TEST_DATA.length / 2);
@@ -75,7 +75,7 @@ public final class ByteArrayUploadDataProviderTest {
   }
 
   @Test
-  public void testRewind() throws IOException {
+  public void rewind() throws IOException {
     // Read all the data.
     byteArrayUploadDataProvider.read(mockUploadDataSink, byteBuffer);
     assertThat(byteBuffer.array()).isEqualTo(TEST_DATA);

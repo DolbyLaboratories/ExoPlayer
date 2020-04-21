@@ -15,8 +15,10 @@
  */
 package com.google.android.exoplayer2;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.util.Util;
+import java.util.Collections;
+import java.util.List;
 
 /** Abstract base {@link Player} which implements common implementation independent methods. */
 public abstract class BasePlayer implements Player {
@@ -25,6 +27,71 @@ public abstract class BasePlayer implements Player {
 
   public BasePlayer() {
     window = new Timeline.Window();
+  }
+
+  @Override
+  public void setMediaItem(MediaItem mediaItem) {
+    setMediaItems(Collections.singletonList(mediaItem));
+  }
+
+  @Override
+  public void setMediaItem(MediaItem mediaItem, long startPositionMs) {
+    setMediaItems(Collections.singletonList(mediaItem), /* startWindowIndex= */ 0, startPositionMs);
+  }
+
+  @Override
+  public void setMediaItem(MediaItem mediaItem, boolean resetPosition) {
+    setMediaItems(Collections.singletonList(mediaItem), resetPosition);
+  }
+
+  @Override
+  public void setMediaItems(List<MediaItem> mediaItems, boolean resetPosition) {
+    setMediaItems(
+        mediaItems, /* startWindowIndex= */ C.INDEX_UNSET, /* startPositionMs= */ C.TIME_UNSET);
+  }
+
+  @Override
+  public void setMediaItems(List<MediaItem> mediaItems) {
+    setMediaItems(mediaItems, /* resetPosition= */ true);
+  }
+
+  @Override
+  public void addMediaItem(int index, MediaItem mediaItem) {
+    addMediaItems(index, Collections.singletonList(mediaItem));
+  }
+
+  @Override
+  public void addMediaItem(MediaItem mediaItem) {
+    addMediaItems(Collections.singletonList(mediaItem));
+  }
+
+  @Override
+  public void moveMediaItem(int currentIndex, int newIndex) {
+    if (currentIndex != newIndex) {
+      moveMediaItems(/* fromIndex= */ currentIndex, /* toIndex= */ currentIndex + 1, newIndex);
+    }
+  }
+
+  @Override
+  public void removeMediaItem(int index) {
+    removeMediaItems(/* fromIndex= */ index, /* toIndex= */ index + 1);
+  }
+
+  @Override
+  public final void play() {
+    setPlayWhenReady(true);
+  }
+
+  @Override
+  public final void pause() {
+    setPlayWhenReady(false);
+  }
+
+  @Override
+  public final boolean isPlaying() {
+    return getPlaybackState() == Player.STATE_READY
+        && getPlayWhenReady()
+        && getPlaybackSuppressionReason() == PLAYBACK_SUPPRESSION_REASON_NONE;
   }
 
   @Override
@@ -94,11 +161,15 @@ public abstract class BasePlayer implements Player {
   @Override
   @Nullable
   public final Object getCurrentTag() {
-    int windowIndex = getCurrentWindowIndex();
     Timeline timeline = getCurrentTimeline();
-    return windowIndex >= timeline.getWindowCount()
-        ? null
-        : timeline.getWindow(windowIndex, window, /* setTag= */ true).tag;
+    return timeline.isEmpty() ? null : timeline.getWindow(getCurrentWindowIndex(), window).tag;
+  }
+
+  @Override
+  @Nullable
+  public final Object getCurrentManifest() {
+    Timeline timeline = getCurrentTimeline();
+    return timeline.isEmpty() ? null : timeline.getWindow(getCurrentWindowIndex(), window).manifest;
   }
 
   @Override
@@ -114,6 +185,25 @@ public abstract class BasePlayer implements Player {
   public final boolean isCurrentWindowDynamic() {
     Timeline timeline = getCurrentTimeline();
     return !timeline.isEmpty() && timeline.getWindow(getCurrentWindowIndex(), window).isDynamic;
+  }
+
+  @Override
+  public final boolean isCurrentWindowLive() {
+    Timeline timeline = getCurrentTimeline();
+    return !timeline.isEmpty() && timeline.getWindow(getCurrentWindowIndex(), window).isLive;
+  }
+
+  @Override
+  public final long getCurrentLiveOffset() {
+    Timeline timeline = getCurrentTimeline();
+    if (timeline.isEmpty()) {
+      return C.TIME_UNSET;
+    }
+    long windowStartTimeMs = timeline.getWindow(getCurrentWindowIndex(), window).windowStartTimeMs;
+    if (windowStartTimeMs == C.TIME_UNSET) {
+      return C.TIME_UNSET;
+    }
+    return window.getCurrentUnixTimeMs() - window.windowStartTimeMs - getContentPosition();
   }
 
   @Override

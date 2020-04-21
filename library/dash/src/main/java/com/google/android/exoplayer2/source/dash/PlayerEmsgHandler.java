@@ -19,12 +19,12 @@ import static com.google.android.exoplayer2.util.Util.parseXsDateTime;
 
 import android.os.Handler;
 import android.os.Message;
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.FormatHolder;
 import com.google.android.exoplayer2.ParserException;
-import com.google.android.exoplayer2.extractor.ExtractorInput;
+import com.google.android.exoplayer2.drm.DrmSessionManager;
 import com.google.android.exoplayer2.extractor.TrackOutput;
 import com.google.android.exoplayer2.metadata.Metadata;
 import com.google.android.exoplayer2.metadata.MetadataInputBuffer;
@@ -34,6 +34,8 @@ import com.google.android.exoplayer2.source.SampleQueue;
 import com.google.android.exoplayer2.source.chunk.Chunk;
 import com.google.android.exoplayer2.source.dash.manifest.DashManifest;
 import com.google.android.exoplayer2.upstream.Allocator;
+import com.google.android.exoplayer2.upstream.DataReader;
+import com.google.android.exoplayer2.util.MediaSourceEventDispatcher;
 import com.google.android.exoplayer2.util.ParsableByteArray;
 import com.google.android.exoplayer2.util.Util;
 import java.io.IOException;
@@ -195,7 +197,7 @@ public final class PlayerEmsgHandler implements Handler.Callback {
 
   /** Returns a {@link TrackOutput} that emsg messages could be written to. */
   public PlayerTrackEmsgHandler newPlayerTrackEmsgHandler() {
-    return new PlayerTrackEmsgHandler(new SampleQueue(allocator));
+    return new PlayerTrackEmsgHandler(allocator);
   }
 
   /** Release this emsg handler. It should not be reused after this call. */
@@ -282,9 +284,12 @@ public final class PlayerEmsgHandler implements Handler.Callback {
     private final FormatHolder formatHolder;
     private final MetadataInputBuffer buffer;
 
-    /* package */ PlayerTrackEmsgHandler(SampleQueue sampleQueue) {
-      this.sampleQueue = sampleQueue;
-
+    /* package */ PlayerTrackEmsgHandler(Allocator allocator) {
+      this.sampleQueue =
+          new SampleQueue(
+              allocator,
+              DrmSessionManager.getDummyDrmSessionManager(),
+              new MediaSourceEventDispatcher());
       formatHolder = new FormatHolder();
       buffer = new MetadataInputBuffer();
     }
@@ -295,8 +300,8 @@ public final class PlayerEmsgHandler implements Handler.Callback {
     }
 
     @Override
-    public int sampleData(ExtractorInput input, int length, boolean allowEndOfInput)
-        throws IOException, InterruptedException {
+    public int sampleData(DataReader input, int length, boolean allowEndOfInput)
+        throws IOException {
       return sampleQueue.sampleData(input, length, allowEndOfInput);
     }
 
@@ -347,13 +352,13 @@ public final class PlayerEmsgHandler implements Handler.Callback {
 
     /** Release this track emsg handler. It should not be reused after this call. */
     public void release() {
-      sampleQueue.reset();
+      sampleQueue.release();
     }
 
     // Internal methods.
 
     private void parseAndDiscardSamples() {
-      while (sampleQueue.hasNextSample()) {
+      while (sampleQueue.isReady(/* loadingFinished= */ false)) {
         MetadataInputBuffer inputBuffer = dequeueSample();
         if (inputBuffer == null) {
           continue;
@@ -371,7 +376,13 @@ public final class PlayerEmsgHandler implements Handler.Callback {
     @Nullable
     private MetadataInputBuffer dequeueSample() {
       buffer.clear();
-      int result = sampleQueue.read(formatHolder, buffer, false, false, 0);
+      int result =
+          sampleQueue.read(
+              formatHolder,
+              buffer,
+              /* formatRequired= */ false,
+              /* loadingFinished= */ false,
+              /* decodeOnlyUntilUs= */ 0);
       if (result == C.RESULT_BUFFER_READ) {
         buffer.flip();
         return buffer;

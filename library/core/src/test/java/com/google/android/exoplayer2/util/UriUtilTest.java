@@ -20,23 +20,21 @@ import static com.google.android.exoplayer2.util.UriUtil.resolve;
 import static com.google.common.truth.Truth.assertThat;
 
 import android.net.Uri;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit tests for {@link UriUtil}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit tests for {@link UriUtil}. */
+@RunWith(AndroidJUnit4.class)
 public final class UriUtilTest {
 
   /**
    * Tests normal usage of {@link UriUtil#resolve(String, String)}.
-   * <p>
-   * The test cases are taken from RFC-3986 5.4.1.
+   *
+   * <p>The test cases are taken from RFC-3986 5.4.1.
    */
   @Test
-  public void testResolveNormal() {
+  public void resolveNormal() {
     String base = "http://a/b/c/d;p?q";
 
     assertThat(resolve(base, "g:h")).isEqualTo("g:h");
@@ -65,11 +63,11 @@ public final class UriUtilTest {
 
   /**
    * Tests abnormal usage of {@link UriUtil#resolve(String, String)}.
-   * <p>
-   * The test cases are taken from RFC-3986 5.4.2.
+   *
+   * <p>The test cases are taken from RFC-3986 5.4.2.
    */
   @Test
-  public void testResolveAbnormal() {
+  public void resolveAbnormal() {
     String base = "http://a/b/c/d;p?q";
 
     assertThat(resolve(base, "../../../g")).isEqualTo("http://a/g");
@@ -97,11 +95,9 @@ public final class UriUtilTest {
     assertThat(resolve(base, "http:g")).isEqualTo("http:g");
   }
 
-  /**
-   * Tests additional abnormal usage of {@link UriUtil#resolve(String, String)}.
-   */
+  /** Tests additional abnormal usage of {@link UriUtil#resolve(String, String)}. */
   @Test
-  public void testResolveAbnormalAdditional() {
+  public void resolveAbnormalAdditional() {
     assertThat(resolve("http://a/b", "c:d/../e")).isEqualTo("c:e");
     assertThat(resolve("a:b", "../c")).isEqualTo("a:c");
   }

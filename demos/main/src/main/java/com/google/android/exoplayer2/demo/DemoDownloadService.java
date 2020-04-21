@@ -15,36 +15,48 @@
  */
 package com.google.android.exoplayer2.demo;
 
+import static com.google.android.exoplayer2.demo.DemoApplication.DOWNLOAD_NOTIFICATION_CHANNEL_ID;
+
 import android.app.Notification;
+import android.content.Context;
+import androidx.annotation.NonNull;
+import com.google.android.exoplayer2.offline.Download;
 import com.google.android.exoplayer2.offline.DownloadManager;
 import com.google.android.exoplayer2.offline.DownloadService;
-import com.google.android.exoplayer2.offline.DownloadState;
 import com.google.android.exoplayer2.scheduler.PlatformScheduler;
-import com.google.android.exoplayer2.ui.DownloadNotificationUtil;
+import com.google.android.exoplayer2.ui.DownloadNotificationHelper;
 import com.google.android.exoplayer2.util.NotificationUtil;
 import com.google.android.exoplayer2.util.Util;
+import java.util.List;
 
 /** A service for downloading media. */
 public class DemoDownloadService extends DownloadService {
 
-  private static final String CHANNEL_ID = "download_channel";
   private static final int JOB_ID = 1;
   private static final int FOREGROUND_NOTIFICATION_ID = 1;
-
-  private static int nextNotificationId = FOREGROUND_NOTIFICATION_ID + 1;
 
   public DemoDownloadService() {
     super(
         FOREGROUND_NOTIFICATION_ID,
         DEFAULT_FOREGROUND_NOTIFICATION_UPDATE_INTERVAL,
-        CHANNEL_ID,
-        R.string.exo_download_notification_channel_name);
-    nextNotificationId = FOREGROUND_NOTIFICATION_ID + 1;
+        DOWNLOAD_NOTIFICATION_CHANNEL_ID,
+        R.string.exo_download_notification_channel_name,
+        /* channelDescriptionResourceId= */ 0);
   }
 
   @Override
+  @NonNull
   protected DownloadManager getDownloadManager() {
-    return ((DemoApplication) getApplication()).getDownloadManager();
+    // This will only happen once, because getDownloadManager is guaranteed to be called only once
+    // in the life cycle of the process.
+    DemoApplication application = (DemoApplication) getApplication();
+    DownloadManager downloadManager = application.getDownloadManager();
+    DownloadNotificationHelper downloadNotificationHelper =
+        application.getDownloadNotificationHelper();
+    downloadManager.addListener(
+        new TerminalStateNotificationHelper(
+            this, downloadNotificationHelper, FOREGROUND_NOTIFICATION_ID + 1));
+    return downloadManager;
   }
 
   @Override
@@ -53,38 +65,53 @@ public class DemoDownloadService extends DownloadService {
   }
 
   @Override
-  protected Notification getForegroundNotification(DownloadState[] downloadStates) {
-    return DownloadNotificationUtil.buildProgressNotification(
-        /* context= */ this,
-        R.drawable.ic_download,
-        CHANNEL_ID,
-        /* contentIntent= */ null,
-        /* message= */ null,
-        downloadStates);
+  @NonNull
+  protected Notification getForegroundNotification(@NonNull List<Download> downloads) {
+    return ((DemoApplication) getApplication())
+        .getDownloadNotificationHelper()
+        .buildProgressNotification(
+            R.drawable.ic_download, /* contentIntent= */ null, /* message= */ null, downloads);
   }
 
-  @Override
-  protected void onDownloadStateChanged(DownloadState downloadState) {
-    Notification notification = null;
-    if (downloadState.state == DownloadState.STATE_COMPLETED) {
-      notification =
-          DownloadNotificationUtil.buildDownloadCompletedNotification(
-              /* context= */ this,
-              R.drawable.ic_download_done,
-              CHANNEL_ID,
-              /* contentIntent= */ null,
-              Util.fromUtf8Bytes(downloadState.customMetadata));
-    } else if (downloadState.state == DownloadState.STATE_FAILED) {
-      notification =
-          DownloadNotificationUtil.buildDownloadFailedNotification(
-              /* context= */ this,
-              R.drawable.ic_download_done,
-              CHANNEL_ID,
-              /* contentIntent= */ null,
-              Util.fromUtf8Bytes(downloadState.customMetadata));
-    } else {
-      return;
+  /**
+   * Creates and displays notifications for downloads when they complete or fail.
+   *
+   * <p>This helper will outlive the lifespan of a single instance of {@link DemoDownloadService}.
+   * It is static to avoid leaking the first {@link DemoDownloadService} instance.
+   */
+  private static final class TerminalStateNotificationHelper implements DownloadManager.Listener {
+
+    private final Context context;
+    private final DownloadNotificationHelper notificationHelper;
+
+    private int nextNotificationId;
+
+    public TerminalStateNotificationHelper(
+        Context context, DownloadNotificationHelper notificationHelper, int firstNotificationId) {
+      this.context = context.getApplicationContext();
+      this.notificationHelper = notificationHelper;
+      nextNotificationId = firstNotificationId;
     }
-    NotificationUtil.setNotification(this, nextNotificationId++, notification);
+
+    @Override
+    public void onDownloadChanged(@NonNull DownloadManager manager, @NonNull Download download) {
+      Notification notification;
+      if (download.state == Download.STATE_COMPLETED) {
+        notification =
+            notificationHelper.buildDownloadCompletedNotification(
+                R.drawable.ic_download_done,
+                /* contentIntent= */ null,
+                Util.fromUtf8Bytes(download.request.data));
+      } else if (download.state == Download.STATE_FAILED) {
+        notification =
+            notificationHelper.buildDownloadFailedNotification(
+                R.drawable.ic_download_done,
+                /* contentIntent= */ null,
+                Util.fromUtf8Bytes(download.request.data));
+      } else {
+        return;
+      }
+      NotificationUtil.setNotification(context, nextNotificationId++, notification);
+    }
   }
 }

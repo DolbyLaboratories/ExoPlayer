@@ -17,16 +17,16 @@ package com.google.android.exoplayer2.video.spherical;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.util.Util;
 import java.util.Arrays;
 import junit.framework.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
 /** Tests for {@link ProjectionDecoder}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public final class ProjectionDecoderTest {
 
   private static final byte[] PROJ_DATA =
@@ -44,12 +44,12 @@ public final class ProjectionDecoderTest {
   private static final float[] LAST_UV = {1.0f, 1.0f};
 
   @Test
-  public void testDecodeProj() {
+  public void decodeProj() {
     testDecoding(PROJ_DATA);
   }
 
   @Test
-  public void testDecodeMshp() {
+  public void decodeMshp() {
     testDecoding(Arrays.copyOfRange(PROJ_DATA, MSHP_OFFSET, PROJ_DATA.length));
   }
 

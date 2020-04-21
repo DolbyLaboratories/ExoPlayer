@@ -15,8 +15,10 @@
  */
 package com.google.android.exoplayer2.upstream.crypto;
 
+import static com.google.android.exoplayer2.util.Util.castNonNull;
+
 import android.net.Uri;
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DataSpec;
@@ -34,7 +36,7 @@ public final class AesCipherDataSource implements DataSource {
   private final DataSource upstream;
   private final byte[] secretKey;
 
-  private @Nullable AesFlushingCipher cipher;
+  @Nullable private AesFlushingCipher cipher;
 
   public AesCipherDataSource(byte[] secretKey, DataSource upstream) {
     this.upstream = upstream;
@@ -50,8 +52,9 @@ public final class AesCipherDataSource implements DataSource {
   public long open(DataSpec dataSpec) throws IOException {
     long dataLength = upstream.open(dataSpec);
     long nonce = CryptoUtil.getFNV64Hash(dataSpec.key);
-    cipher = new AesFlushingCipher(Cipher.DECRYPT_MODE, secretKey, nonce,
-        dataSpec.absoluteStreamPosition);
+    cipher =
+        new AesFlushingCipher(
+            Cipher.DECRYPT_MODE, secretKey, nonce, dataSpec.uriPositionOffset + dataSpec.position);
     return dataLength;
   }
 
@@ -64,12 +67,13 @@ public final class AesCipherDataSource implements DataSource {
     if (read == C.RESULT_END_OF_INPUT) {
       return C.RESULT_END_OF_INPUT;
     }
-    cipher.updateInPlace(data, offset, read);
+    castNonNull(cipher).updateInPlace(data, offset, read);
     return read;
   }
 
   @Override
-  public @Nullable Uri getUri() {
+  @Nullable
+  public Uri getUri() {
     return upstream.getUri();
   }
 

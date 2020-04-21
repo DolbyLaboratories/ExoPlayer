@@ -19,14 +19,14 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.content.Context;
 import android.view.MotionEvent;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 
 /** Tests for {@link TouchTracker}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public class TouchTrackerTest {
   private static final float EPSILON = 0.00001f;
   private static final int SWIPE_PX = 100;
@@ -45,7 +45,7 @@ public class TouchTrackerTest {
 
   @Before
   public void setUp() {
-    Context context = RuntimeEnvironment.application;
+    Context context = ApplicationProvider.getApplicationContext();
     tracker =
         new TouchTracker(
             context,
@@ -59,7 +59,7 @@ public class TouchTrackerTest {
   }
 
   @Test
-  public void testTap() {
+  public void tap() {
     // Tap is a noop.
     swipe(tracker, 0, 0, 0, 0);
     assertThat(yaw).isWithin(EPSILON).of(0);
@@ -67,21 +67,21 @@ public class TouchTrackerTest {
   }
 
   @Test
-  public void testBasicYaw() {
+  public void basicYaw() {
     swipe(tracker, 0, 0, SWIPE_PX, 0);
     assertThat(yaw).isWithin(EPSILON).of(-SWIPE_PX / PX_PER_DEGREES);
     assertThat(pitch).isWithin(EPSILON).of(0);
   }
 
   @Test
-  public void testBigYaw() {
+  public void bigYaw() {
     swipe(tracker, 0, 0, -10 * SWIPE_PX, 0);
     assertThat(yaw).isEqualTo(10 * SWIPE_PX / PX_PER_DEGREES);
     assertThat(pitch).isWithin(EPSILON).of(0);
   }
 
   @Test
-  public void testYawUnaffectedByPitch() {
+  public void yawUnaffectedByPitch() {
     swipe(tracker, 0, 0, 0, SWIPE_PX);
     assertThat(yaw).isWithin(EPSILON).of(0);
 
@@ -90,14 +90,14 @@ public class TouchTrackerTest {
   }
 
   @Test
-  public void testBasicPitch() {
+  public void basicPitch() {
     swipe(tracker, 0, 0, 0, SWIPE_PX);
     assertThat(yaw).isWithin(EPSILON).of(0);
     assertThat(pitch).isWithin(EPSILON).of(SWIPE_PX / PX_PER_DEGREES);
   }
 
   @Test
-  public void testPitchClipped() {
+  public void pitchClipped() {
     // Big reverse pitch should be clipped.
     swipe(tracker, 0, 0, 0, -20 * SWIPE_PX);
     assertThat(yaw).isWithin(EPSILON).of(0);
@@ -110,7 +110,7 @@ public class TouchTrackerTest {
   }
 
   @Test
-  public void testWithRoll90() {
+  public void withRoll90() {
     tracker.onOrientationChange(dummyMatrix, (float) Math.toRadians(90));
 
     // Y-axis should now control yaw.
@@ -123,7 +123,7 @@ public class TouchTrackerTest {
   }
 
   @Test
-  public void testWithRoll180() {
+  public void withRoll180() {
     tracker.onOrientationChange(dummyMatrix, (float) Math.toRadians(180));
 
     // X-axis should now control reverse yaw.
@@ -136,7 +136,7 @@ public class TouchTrackerTest {
   }
 
   @Test
-  public void testWithRoll270() {
+  public void withRoll270() {
     tracker.onOrientationChange(dummyMatrix, (float) Math.toRadians(270));
 
     // Y-axis should now control reverse yaw.

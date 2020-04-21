@@ -17,16 +17,14 @@ package com.google.android.exoplayer2.drm;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.util.Util;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
-/**
- * Unit test for {@link ClearKeyUtil}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit test for {@link ClearKeyUtil}. */
+@RunWith(AndroidJUnit4.class)
 public final class ClearKeyUtilTest {
 
   private static final byte[] SINGLE_KEY_RESPONSE =
@@ -71,7 +69,7 @@ public final class ClearKeyUtilTest {
 
   @Config(sdk = 26)
   @Test
-  public void testAdjustSingleKeyResponseDataV26() {
+  public void adjustSingleKeyResponseDataV26() {
     // Everything but the keys should be removed. Within each key only the k, kid and kty parameters
     // should remain. Any "-" and "_" characters in the k and kid values should be replaced with "+"
     // and "/".
@@ -89,7 +87,7 @@ public final class ClearKeyUtilTest {
 
   @Config(sdk = 26)
   @Test
-  public void testAdjustMultiKeyResponseDataV26() {
+  public void adjustMultiKeyResponseDataV26() {
     // Everything but the keys should be removed. Within each key only the k, kid and kty parameters
     // should remain. Any "-" and "_" characters in the k and kid values should be replaced with "+"
     // and "/".
@@ -109,14 +107,14 @@ public final class ClearKeyUtilTest {
 
   @Config(sdk = 27)
   @Test
-  public void testAdjustResponseDataV27() {
+  public void adjustResponseDataV27() {
     // Response should be unchanged.
     assertThat(ClearKeyUtil.adjustResponseData(SINGLE_KEY_RESPONSE)).isEqualTo(SINGLE_KEY_RESPONSE);
   }
 
   @Config(sdk = 26)
   @Test
-  public void testAdjustRequestDataV26() {
+  public void adjustRequestDataV26() {
     // We expect "+" and "/" to be replaced with "-" and "_" respectively, for "kids".
     byte[] expected =
         Util.getUtf8Bytes(
@@ -132,7 +130,7 @@ public final class ClearKeyUtilTest {
 
   @Config(sdk = 27)
   @Test
-  public void testAdjustRequestDataV27() {
+  public void adjustRequestDataV27() {
     // Request should be unchanged.
     assertThat(ClearKeyUtil.adjustRequestData(KEY_REQUEST)).isEqualTo(KEY_REQUEST);
   }

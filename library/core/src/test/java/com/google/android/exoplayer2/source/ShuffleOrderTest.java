@@ -18,23 +18,21 @@ package com.google.android.exoplayer2.source;
 import static com.google.android.exoplayer2.C.INDEX_UNSET;
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.source.ShuffleOrder.DefaultShuffleOrder;
 import com.google.android.exoplayer2.source.ShuffleOrder.UnshuffledShuffleOrder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit test for {@link ShuffleOrder}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit test for {@link ShuffleOrder}. */
+@RunWith(AndroidJUnit4.class)
 public final class ShuffleOrderTest {
 
   public static final long RANDOM_SEED = 1234567890L;
 
   @Test
-  public void testDefaultShuffleOrder() {
+  public void defaultShuffleOrder() {
     assertShuffleOrderCorrectness(new DefaultShuffleOrder(0, RANDOM_SEED), 0);
     assertShuffleOrderCorrectness(new DefaultShuffleOrder(1, RANDOM_SEED), 1);
     assertShuffleOrderCorrectness(new DefaultShuffleOrder(5, RANDOM_SEED), 5);
@@ -57,7 +55,7 @@ public final class ShuffleOrderTest {
   }
 
   @Test
-  public void testDefaultShuffleOrderSideloaded() {
+  public void defaultShuffleOrderSideloaded() {
     int[] shuffledIndices = new int[] {2, 1, 0, 4, 3};
     ShuffleOrder shuffleOrder = new DefaultShuffleOrder(shuffledIndices, RANDOM_SEED);
     assertThat(shuffleOrder.getFirstIndex()).isEqualTo(2);
@@ -74,7 +72,7 @@ public final class ShuffleOrderTest {
   }
 
   @Test
-  public void testUnshuffledShuffleOrder() {
+  public void unshuffledShuffleOrder() {
     assertShuffleOrderCorrectness(new UnshuffledShuffleOrder(0), 0);
     assertShuffleOrderCorrectness(new UnshuffledShuffleOrder(1), 1);
     assertShuffleOrderCorrectness(new UnshuffledShuffleOrder(5), 5);
@@ -97,7 +95,7 @@ public final class ShuffleOrderTest {
   }
 
   @Test
-  public void testUnshuffledShuffleOrderIsUnshuffled() {
+  public void unshuffledShuffleOrderIsUnshuffled() {
     ShuffleOrder shuffleOrder = new UnshuffledShuffleOrder(5);
     assertThat(shuffleOrder.getFirstIndex()).isEqualTo(0);
     assertThat(shuffleOrder.getLastIndex()).isEqualTo(4);
@@ -125,7 +123,8 @@ public final class ShuffleOrderTest {
       assertThat(shuffleOrder.getLastIndex()).isEqualTo(indices[length - 1]);
       assertThat(shuffleOrder.getNextIndex(indices[length - 1])).isEqualTo(INDEX_UNSET);
       for (int i = 0; i < length; i++) {
-        assertThat(indices[i] >= 0 && indices[i] < length).isTrue();
+        assertThat(indices[i] >= 0).isTrue();
+        assertThat(indices[i] < length).isTrue();
       }
     }
   }

@@ -16,9 +16,13 @@
 package com.google.android.exoplayer2.source.hls.playlist;
 
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.fail;
 
 import android.net.Uri;
+import androidx.annotation.Nullable;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
+import com.google.android.exoplayer2.ParserException;
 import com.google.android.exoplayer2.source.hls.playlist.HlsMediaPlaylist.Segment;
 import com.google.android.exoplayer2.util.Util;
 import java.io.ByteArrayInputStream;
@@ -29,14 +33,13 @@ import java.util.HashMap;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
 /** Test for {@link HlsMediaPlaylistParserTest}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public class HlsMediaPlaylistParserTest {
 
   @Test
-  public void testParseMediaPlaylist() throws Exception {
+  public void parseMediaPlaylist() throws Exception {
     Uri playlistUri = Uri.parse("https://example.com/test.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -94,8 +97,8 @@ public class HlsMediaPlaylistParserTest {
     assertThat(segment.title).isEqualTo("");
     assertThat(segment.fullSegmentEncryptionKeyUri).isNull();
     assertThat(segment.encryptionIV).isNull();
-    assertThat(segment.byterangeLength).isEqualTo(51370);
-    assertThat(segment.byterangeOffset).isEqualTo(0);
+    assertThat(segment.byteRangeLength).isEqualTo(51370);
+    assertThat(segment.byteRangeOffset).isEqualTo(0);
     assertThat(segment.url).isEqualTo("https://priv.example.com/fileSequence2679.ts");
 
     segment = segments.get(1);
@@ -105,8 +108,8 @@ public class HlsMediaPlaylistParserTest {
     assertThat(segment.fullSegmentEncryptionKeyUri)
         .isEqualTo("https://priv.example.com/key.php?r=2680");
     assertThat(segment.encryptionIV).isEqualTo("0x1566B");
-    assertThat(segment.byterangeLength).isEqualTo(51501);
-    assertThat(segment.byterangeOffset).isEqualTo(2147483648L);
+    assertThat(segment.byteRangeLength).isEqualTo(51501);
+    assertThat(segment.byteRangeOffset).isEqualTo(2147483648L);
     assertThat(segment.url).isEqualTo("https://priv.example.com/fileSequence2680.ts");
 
     segment = segments.get(2);
@@ -115,8 +118,8 @@ public class HlsMediaPlaylistParserTest {
     assertThat(segment.title).isEqualTo("segment title .,:/# with interesting chars");
     assertThat(segment.fullSegmentEncryptionKeyUri).isNull();
     assertThat(segment.encryptionIV).isEqualTo(null);
-    assertThat(segment.byterangeLength).isEqualTo(51501);
-    assertThat(segment.byterangeOffset).isEqualTo(2147535149L);
+    assertThat(segment.byteRangeLength).isEqualTo(51501);
+    assertThat(segment.byteRangeOffset).isEqualTo(2147535149L);
     assertThat(segment.url).isEqualTo("https://priv.example.com/fileSequence2681.ts");
 
     segment = segments.get(3);
@@ -128,8 +131,8 @@ public class HlsMediaPlaylistParserTest {
     // 0xA7A == 2682.
     assertThat(segment.encryptionIV).isNotNull();
     assertThat(Util.toUpperInvariant(segment.encryptionIV)).isEqualTo("A7A");
-    assertThat(segment.byterangeLength).isEqualTo(51740);
-    assertThat(segment.byterangeOffset).isEqualTo(2147586650L);
+    assertThat(segment.byteRangeLength).isEqualTo(51740);
+    assertThat(segment.byteRangeOffset).isEqualTo(2147586650L);
     assertThat(segment.url).isEqualTo("https://priv.example.com/fileSequence2682.ts");
 
     segment = segments.get(4);
@@ -141,13 +144,13 @@ public class HlsMediaPlaylistParserTest {
     // 0xA7B == 2683.
     assertThat(segment.encryptionIV).isNotNull();
     assertThat(Util.toUpperInvariant(segment.encryptionIV)).isEqualTo("A7B");
-    assertThat(segment.byterangeLength).isEqualTo(C.LENGTH_UNSET);
-    assertThat(segment.byterangeOffset).isEqualTo(0);
+    assertThat(segment.byteRangeLength).isEqualTo(C.LENGTH_UNSET);
+    assertThat(segment.byteRangeOffset).isEqualTo(0);
     assertThat(segment.url).isEqualTo("https://priv.example.com/fileSequence2683.ts");
   }
 
   @Test
-  public void testParseSampleAesMethod() throws Exception {
+  public void parseSampleAesMethod() throws Exception {
     Uri playlistUri = Uri.parse("https://example.com/test.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -176,7 +179,7 @@ public class HlsMediaPlaylistParserTest {
   }
 
   @Test
-  public void testParseSampleAesCencMethod() throws Exception {
+  public void parseSampleAesCencMethod() throws Exception {
     Uri playlistUri = Uri.parse("https://example.com/test.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -200,7 +203,7 @@ public class HlsMediaPlaylistParserTest {
   }
 
   @Test
-  public void testParseSampleAesCtrMethod() throws Exception {
+  public void parseSampleAesCtrMethod() throws Exception {
     Uri playlistUri = Uri.parse("https://example.com/test.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -224,7 +227,7 @@ public class HlsMediaPlaylistParserTest {
   }
 
   @Test
-  public void testMultipleExtXKeysForSingleSegment() throws Exception {
+  public void multipleExtXKeysForSingleSegment() throws Exception {
     Uri playlistUri = Uri.parse("https://example.com/test.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -301,7 +304,7 @@ public class HlsMediaPlaylistParserTest {
   }
 
   @Test
-  public void testGapTag() throws IOException {
+  public void gapTag() throws IOException {
     Uri playlistUri = Uri.parse("https://example.com/test2.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -336,7 +339,7 @@ public class HlsMediaPlaylistParserTest {
   }
 
   @Test
-  public void testMapTag() throws IOException {
+  public void mapTag() throws IOException {
     Uri playlistUri = Uri.parse("https://example.com/test3.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -360,13 +363,102 @@ public class HlsMediaPlaylistParserTest {
     List<Segment> segments = playlist.segments;
     assertThat(segments.get(0).initializationSegment).isNull();
     assertThat(segments.get(1).initializationSegment)
-        .isSameAs(segments.get(2).initializationSegment);
+        .isSameInstanceAs(segments.get(2).initializationSegment);
     assertThat(segments.get(1).initializationSegment.url).isEqualTo("init1.ts");
     assertThat(segments.get(3).initializationSegment.url).isEqualTo("init2.ts");
   }
 
   @Test
-  public void testMasterPlaylistAttributeInheritance() throws IOException {
+  public void noExplicitInitSegmentInIFrameOnly_infersInitSegment() throws IOException {
+    Uri playlistUri = Uri.parse("https://example.com/test3.m3u8");
+    String playlistString =
+        "#EXTM3U\n"
+            + "#EXT-X-TARGETDURATION:5\n"
+            + "#EXT-X-I-FRAMES-ONLY\n"
+            + "#EXTINF:5.005,\n"
+            + "#EXT-X-BYTERANGE:100@300\n"
+            + "segment1.ts\n"
+            + "#EXTINF:5.005,\n"
+            + "#EXT-X-BYTERANGE:100@400\n"
+            + "segment2.ts\n"
+            + "#EXTINF:5.005,\n"
+            + "#EXT-X-BYTERANGE:100@400\n"
+            + "segment1.ts\n";
+    InputStream inputStream = new ByteArrayInputStream(Util.getUtf8Bytes(playlistString));
+    HlsMediaPlaylist playlist =
+        (HlsMediaPlaylist) new HlsPlaylistParser().parse(playlistUri, inputStream);
+    List<Segment> segments = playlist.segments;
+    @Nullable Segment initializationSegment = segments.get(0).initializationSegment;
+    assertThat(initializationSegment.url).isEqualTo("segment1.ts");
+    assertThat(initializationSegment.byteRangeOffset).isEqualTo(0);
+    assertThat(initializationSegment.byteRangeLength).isEqualTo(300);
+    initializationSegment = segments.get(1).initializationSegment;
+    assertThat(initializationSegment.url).isEqualTo("segment2.ts");
+    assertThat(initializationSegment.byteRangeOffset).isEqualTo(0);
+    assertThat(initializationSegment.byteRangeLength).isEqualTo(400);
+    initializationSegment = segments.get(2).initializationSegment;
+    assertThat(initializationSegment.url).isEqualTo("segment1.ts");
+    assertThat(initializationSegment.byteRangeOffset).isEqualTo(0);
+    assertThat(initializationSegment.byteRangeLength).isEqualTo(300);
+  }
+
+  @Test
+  public void encryptedMapTag() throws IOException {
+    Uri playlistUri = Uri.parse("https://example.com/test3.m3u8");
+    String playlistString =
+        "#EXTM3U\n"
+            + "#EXT-X-VERSION:3\n"
+            + "#EXT-X-TARGETDURATION:5\n"
+            + "#EXT-X-MEDIA-SEQUENCE:10\n"
+            + "#EXT-X-KEY:METHOD=AES-128,"
+            + "URI=\"https://priv.example.com/key.php?r=2680\",IV=0x1566B\n"
+            + "#EXT-X-MAP:URI=\"init1.ts\""
+            + "#EXTINF:5.005,\n"
+            + "02/00/32.ts\n"
+            + "#EXT-X-KEY:METHOD=NONE\n"
+            + "#EXT-X-MAP:URI=\"init2.ts\""
+            + "#EXTINF:5.005,\n"
+            + "02/00/47.ts\n";
+    InputStream inputStream = new ByteArrayInputStream(Util.getUtf8Bytes(playlistString));
+    HlsMediaPlaylist playlist =
+        (HlsMediaPlaylist) new HlsPlaylistParser().parse(playlistUri, inputStream);
+
+    List<Segment> segments = playlist.segments;
+    Segment initSegment1 = segments.get(0).initializationSegment;
+    assertThat(initSegment1.fullSegmentEncryptionKeyUri)
+        .isEqualTo("https://priv.example.com/key.php?r=2680");
+    assertThat(initSegment1.encryptionIV).isEqualTo("0x1566B");
+    Segment initSegment2 = segments.get(1).initializationSegment;
+    assertThat(initSegment2.fullSegmentEncryptionKeyUri).isNull();
+    assertThat(initSegment2.encryptionIV).isNull();
+  }
+
+  @Test
+  public void encryptedMapTagWithNoIvFails() throws IOException {
+    Uri playlistUri = Uri.parse("https://example.com/test3.m3u8");
+    String playlistString =
+        "#EXTM3U\n"
+            + "#EXT-X-VERSION:3\n"
+            + "#EXT-X-TARGETDURATION:5\n"
+            + "#EXT-X-MEDIA-SEQUENCE:10\n"
+            + "#EXT-X-KEY:METHOD=AES-128,"
+            + "URI=\"https://priv.example.com/key.php?r=2680\"\n"
+            + "#EXT-X-MAP:URI=\"init1.ts\""
+            + "#EXTINF:5.005,\n"
+            + "02/00/32.ts\n";
+    InputStream inputStream = new ByteArrayInputStream(Util.getUtf8Bytes(playlistString));
+
+    try {
+      new HlsPlaylistParser().parse(playlistUri, inputStream);
+      fail();
+    } catch (ParserException e) {
+      // Expected because the initialization segment does not have a defined initialization vector,
+      // although it is affected by an EXT-X-KEY tag.
+    }
+  }
+
+  @Test
+  public void masterPlaylistAttributeInheritance() throws IOException {
     Uri playlistUri = Uri.parse("https://example.com/test3.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -394,19 +486,22 @@ public class HlsMediaPlaylistParserTest {
             /* baseUri= */ "https://example.com/",
             /* tags= */ Collections.emptyList(),
             /* variants= */ Collections.emptyList(),
+            /* videos= */ Collections.emptyList(),
             /* audios= */ Collections.emptyList(),
             /* subtitles= */ Collections.emptyList(),
+            /* closedCaptions= */ Collections.emptyList(),
             /* muxedAudioFormat= */ null,
             /* muxedCaptionFormats= */ null,
             /* hasIndependentSegments= */ true,
-            /* variableDefinitions */ Collections.emptyMap());
+            /* variableDefinitions= */ Collections.emptyMap(),
+            /* sessionKeyDrmInitData= */ Collections.emptyList());
     HlsMediaPlaylist playlistWithInheritance =
         (HlsMediaPlaylist) new HlsPlaylistParser(masterPlaylist).parse(playlistUri, inputStream);
     assertThat(playlistWithInheritance.hasIndependentSegments).isTrue();
   }
 
   @Test
-  public void testVariableSubstitution() throws IOException {
+  public void variableSubstitution() throws IOException {
     Uri playlistUri = Uri.parse("https://example.com/substitution.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -429,7 +524,7 @@ public class HlsMediaPlaylistParserTest {
   }
 
   @Test
-  public void testInheritedVariableSubstitution() throws IOException {
+  public void inheritedVariableSubstitution() throws IOException {
     Uri playlistUri = Uri.parse("https://example.com/test3.m3u8");
     String playlistString =
         "#EXTM3U\n"
@@ -453,12 +548,15 @@ public class HlsMediaPlaylistParserTest {
             /* baseUri= */ "",
             /* tags= */ Collections.emptyList(),
             /* variants= */ Collections.emptyList(),
+            /* videos= */ Collections.emptyList(),
             /* audios= */ Collections.emptyList(),
             /* subtitles= */ Collections.emptyList(),
+            /* closedCaptions= */ Collections.emptyList(),
             /* muxedAudioFormat= */ null,
             /* muxedCaptionFormats= */ Collections.emptyList(),
             /* hasIndependentSegments= */ false,
-            variableDefinitions);
+            variableDefinitions,
+            /* sessionKeyDrmInitData= */ Collections.emptyList());
     HlsMediaPlaylist playlist =
         (HlsMediaPlaylist) new HlsPlaylistParser(masterPlaylist).parse(playlistUri, inputStream);
     for (int i = 1; i <= 4; i++) {

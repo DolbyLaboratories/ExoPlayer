@@ -17,6 +17,7 @@ package com.google.android.exoplayer2.testutil;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.source.TrackGroup;
@@ -27,35 +28,24 @@ import java.util.List;
 import java.util.Random;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
 /** Unit test for {@link FakeAdaptiveDataSet}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public final class FakeAdaptiveDataSetTest {
 
   private static final Format[] TEST_FORMATS = {
-    Format.createVideoSampleFormat(
-        null,
-        MimeTypes.VIDEO_H264,
-        null,
-        1000000,
-        Format.NO_VALUE,
-        1280,
-        720,
-        Format.NO_VALUE,
-        null,
-        null),
-    Format.createVideoSampleFormat(
-        null,
-        MimeTypes.VIDEO_H264,
-        null,
-        300000,
-        Format.NO_VALUE,
-        640,
-        360,
-        Format.NO_VALUE,
-        null,
-        null)
+    new Format.Builder()
+        .setSampleMimeType(MimeTypes.VIDEO_H264)
+        .setAverageBitrate(1_000_000)
+        .setWidth(1280)
+        .setHeight(720)
+        .build(),
+    new Format.Builder()
+        .setSampleMimeType(MimeTypes.VIDEO_H264)
+        .setAverageBitrate(300_000)
+        .setWidth(640)
+        .setHeight(360)
+        .build()
   };
   private static final TrackGroup TRACK_GROUP = new TrackGroup(TEST_FORMATS);
 
@@ -90,7 +80,7 @@ public final class FakeAdaptiveDataSetTest {
     for (int i = 0; i < dataSet.getChunkCount() - 1; i++) {
       assertThat(dataSet.getChunkDuration(i)).isEqualTo(chunkDuration);
     }
-    assertThat(dataSet.getChunkDuration(3)).isEqualTo(1 * C.MICROS_PER_SECOND);
+    assertThat(dataSet.getChunkDuration(3)).isEqualTo(C.MICROS_PER_SECOND);
     assertChunkData(dataSet, chunkDuration);
   }
 
@@ -101,7 +91,7 @@ public final class FakeAdaptiveDataSetTest {
         new FakeAdaptiveDataSet(
             TRACK_GROUP,
             100000 * C.MICROS_PER_SECOND,
-            1 * C.MICROS_PER_SECOND,
+            C.MICROS_PER_SECOND,
             expectedStdDev,
             new Random(0));
     for (int i = 0; i < TEST_FORMATS.length; i++) {

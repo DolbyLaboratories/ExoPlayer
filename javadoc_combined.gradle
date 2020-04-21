@@ -29,8 +29,7 @@ class CombinedJavadocPlugin implements Plugin<Project> {
           classpath = project.files([])
           destinationDir = project.file("$project.buildDir/docs/javadoc")
           options {
-            links "https://docs.oracle.com/javase/7/docs/api/",
-                "https://developer.android.com/reference"
+            links "https://developer.android.com/reference"
             encoding = "UTF-8"
           }
           exclude "**/BuildConfig.java"
@@ -42,7 +41,7 @@ class CombinedJavadocPlugin implements Plugin<Project> {
                 if (name == "release") {
                   classpath +=
                       libraryModule.project.files(
-                          variant.javaCompile.classpath.files,
+                          variant.javaCompileProvider.get().classpath.files,
                           libraryModule.project.android.getBootClasspath())
                 }
               }

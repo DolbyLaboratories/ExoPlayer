@@ -19,13 +19,13 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
 /** Tests for {@link Projection}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public class ProjectionTest {
   private static final float EPSILON = .00001f;
 
@@ -37,7 +37,7 @@ public class ProjectionTest {
   private static final float HORIZONTAL_FOV_DEGREES = 360;
 
   @Test
-  public void testSphericalMesh() throws Exception {
+  public void sphericalMesh() throws Exception {
     // Only the first param is important in this test.
     Projection projection =
         Projection.createEquirectangular(
@@ -61,7 +61,7 @@ public class ProjectionTest {
   }
 
   @Test
-  public void testArgumentValidation() {
+  public void argumentValidation() {
     checkIllegalArgumentException(0, 1, 1, 1, 1);
     checkIllegalArgumentException(1, 0, 1, 1, 1);
     checkIllegalArgumentException(1, 1, 0, 1, 1);

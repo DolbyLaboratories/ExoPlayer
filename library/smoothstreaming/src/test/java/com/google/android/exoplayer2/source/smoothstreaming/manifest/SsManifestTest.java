@@ -18,6 +18,7 @@ package com.google.android.exoplayer2.source.smoothstreaming.manifest;
 import static com.google.android.exoplayer2.source.smoothstreaming.SsTestUtils.createSsManifest;
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.offline.StreamKey;
@@ -30,14 +31,13 @@ import java.util.List;
 import java.util.Random;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
 /** Unit tests for {@link SsManifest}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public class SsManifestTest {
 
   @Test
-  public void testCopy() throws Exception {
+  public void copy() throws Exception {
     Format[][] formats = newFormats(2, 3);
     SsManifest sourceManifest =
         createSsManifest(
@@ -58,7 +58,7 @@ public class SsManifestTest {
   }
 
   @Test
-  public void testCopyRemoveStreamElement() throws Exception {
+  public void copyRemoveStreamElement() throws Exception {
     Format[][] formats = newFormats(2, 3);
     SsManifest sourceManifest =
         createSsManifest(
@@ -114,14 +114,10 @@ public class SsManifestTest {
   }
 
   private static Format newFormat(String id) {
-    return Format.createContainerFormat(
-        id,
-        /* label= */ null,
-        MimeTypes.VIDEO_MP4,
-        MimeTypes.VIDEO_H264,
-        /* codecs= */ null,
-        /* bitrate= */ Format.NO_VALUE,
-        /* selectionFlags= */ 0,
-        /* language= */ null);
+    return new Format.Builder()
+        .setId(id)
+        .setContainerMimeType(MimeTypes.VIDEO_MP4)
+        .setSampleMimeType(MimeTypes.VIDEO_H264)
+        .build();
   }
 }

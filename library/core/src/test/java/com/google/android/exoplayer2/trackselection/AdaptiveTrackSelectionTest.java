@@ -16,9 +16,6 @@
 package com.google.android.exoplayer2.trackselection;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.argThat;
-import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -26,6 +23,7 @@ import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.source.TrackGroup;
@@ -36,18 +34,15 @@ import com.google.android.exoplayer2.trackselection.TrackSelection.Definition;
 import com.google.android.exoplayer2.upstream.BandwidthMeter;
 import com.google.android.exoplayer2.util.MimeTypes;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
-import org.robolectric.RobolectricTestRunner;
 
 /** Unit test for {@link AdaptiveTrackSelection}. */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(AndroidJUnit4.class)
 public final class AdaptiveTrackSelectionTest {
 
   private static final MediaChunkIterator[] THREE_EMPTY_MEDIA_CHUNK_ITERATORS =
@@ -68,7 +63,7 @@ public final class AdaptiveTrackSelectionTest {
 
   @Test
   @SuppressWarnings("deprecation")
-  public void testFactoryUsesInitiallyProvidedBandwidthMeter() {
+  public void factoryUsesInitiallyProvidedBandwidthMeter() {
     BandwidthMeter initialBandwidthMeter = mock(BandwidthMeter.class);
     BandwidthMeter injectedBandwidthMeter = mock(BandwidthMeter.class);
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
@@ -77,7 +72,7 @@ public final class AdaptiveTrackSelectionTest {
         new AdaptiveTrackSelection.Factory(initialBandwidthMeter)
             .createTrackSelections(
                 new Definition[] {
-                  new Definition(new TrackGroup(format1, format2), /* tracks= */ 0, 1)
+                  new Definition(new TrackGroup(format1, format2), /* tracks=... */ 0, 1)
                 },
                 injectedBandwidthMeter);
     trackSelections[0].updateSelectedTrack(
@@ -92,7 +87,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testSelectInitialIndexUseMaxInitialBitrateIfNoBandwidthEstimate() {
+  public void selectInitialIndexUseMaxInitialBitrateIfNoBandwidthEstimate() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -106,7 +101,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testSelectInitialIndexUseBandwidthEstimateIfAvailable() {
+  public void selectInitialIndexUseBandwidthEstimateIfAvailable() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -120,7 +115,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testUpdateSelectedTrackDoNotSwitchUpIfNotBufferedEnough() {
+  public void updateSelectedTrackDoNotSwitchUpIfNotBufferedEnough() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -148,7 +143,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testUpdateSelectedTrackSwitchUpIfBufferedEnough() {
+  public void updateSelectedTrackSwitchUpIfBufferedEnough() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -176,7 +171,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testUpdateSelectedTrackDoNotSwitchDownIfBufferedEnough() {
+  public void updateSelectedTrackDoNotSwitchDownIfBufferedEnough() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -204,7 +199,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testUpdateSelectedTrackSwitchDownIfNotBufferedEnough() {
+  public void updateSelectedTrackSwitchDownIfNotBufferedEnough() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -232,60 +227,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testUpdateSelectedTrackSwitchUpIfTrackBitrateEstimateIsLow() {
-    Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
-    Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
-    Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
-    TrackGroup trackGroup = new TrackGroup(format1, format2, format3);
-
-    // The second measurement onward returns 1500L, which isn't enough to switch up to format3 as
-    // the format bitrate is 2000.
-    when(mockBandwidthMeter.getBitrateEstimate()).thenReturn(1000L, 1500L);
-
-    // But TrackBitrateEstimator returns 1500 for 3rd track so it should switch up.
-    TrackBitrateEstimator estimator = mock(TrackBitrateEstimator.class);
-    when(estimator.getBitrates(any(), any(), any(), any()))
-        .then(
-            (invocation) -> {
-              int[] returnValue = new int[] {500, 1000, 1500};
-              int[] inputArray = (int[]) invocation.getArguments()[3];
-              System.arraycopy(returnValue, 0, inputArray, 0, returnValue.length);
-              return returnValue;
-            });
-
-    adaptiveTrackSelection = adaptiveTrackSelection(trackGroup);
-    adaptiveTrackSelection.experimental_setTrackBitrateEstimator(estimator);
-
-    adaptiveTrackSelection.updateSelectedTrack(
-        /* playbackPositionUs= */ 0,
-        /* bufferedDurationUs= */ AdaptiveTrackSelection
-                .DEFAULT_MIN_DURATION_FOR_QUALITY_INCREASE_MS
-            * 1000,
-        /* availableDurationUs= */ C.TIME_UNSET,
-        /* queue= */ Collections.emptyList(),
-        /* mediaChunkIterators= */ THREE_EMPTY_MEDIA_CHUNK_ITERATORS);
-
-    ArgumentMatcher<Format[]> matcher =
-        new ArgumentMatcher<Format[]>() {
-          @Override
-          public boolean matches(Object argument) {
-            Format[] formats = (Format[]) argument;
-            return formats.length == 3
-                && Arrays.asList(formats).containsAll(Arrays.asList(format1, format2, format3));
-          }
-        };
-    verify(estimator)
-        .getBitrates(
-            argThat(matcher),
-            eq(Collections.emptyList()),
-            eq(THREE_EMPTY_MEDIA_CHUNK_ITERATORS),
-            any());
-    assertThat(adaptiveTrackSelection.getSelectedFormat()).isEqualTo(format3);
-    assertThat(adaptiveTrackSelection.getSelectionReason()).isEqualTo(C.SELECTION_REASON_ADAPTIVE);
-  }
-
-  @Test
-  public void testEvaluateQueueSizeReturnQueueSizeIfBandwidthIsNotImproved() {
+  public void evaluateQueueSizeReturnQueueSizeIfBandwidthIsNotImproved() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -310,7 +252,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testEvaluateQueueSizeDoNotReevaluateUntilAfterMinTimeBetweenBufferReevaluation() {
+  public void evaluateQueueSizeDoNotReevaluateUntilAfterMinTimeBetweenBufferReevaluation() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -347,7 +289,7 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   @Test
-  public void testEvaluateQueueSizeRetainMoreThanMinimumDurationAfterDiscard() {
+  public void evaluateQueueSizeRetainMoreThanMinimumDurationAfterDiscard() {
     Format format1 = videoFormat(/* bitrate= */ 500, /* width= */ 320, /* height= */ 240);
     Format format2 = videoFormat(/* bitrate= */ 1000, /* width= */ 640, /* height= */ 480);
     Format format3 = videoFormat(/* bitrate= */ 2000, /* width= */ 960, /* height= */ 720);
@@ -397,6 +339,7 @@ public final class AdaptiveTrackSelectionTest {
             trackGroup,
             selectedAllTracksInGroup(trackGroup),
             mockBandwidthMeter,
+            /* reservedBandwidth= */ 0,
             minDurationForQualityIncreaseMs,
             AdaptiveTrackSelection.DEFAULT_MAX_DURATION_FOR_QUALITY_DECREASE_MS,
             AdaptiveTrackSelection.DEFAULT_MIN_DURATION_TO_RETAIN_AFTER_DISCARD_MS,
@@ -413,6 +356,7 @@ public final class AdaptiveTrackSelectionTest {
             trackGroup,
             selectedAllTracksInGroup(trackGroup),
             mockBandwidthMeter,
+            /* reservedBandwidth= */ 0,
             AdaptiveTrackSelection.DEFAULT_MIN_DURATION_FOR_QUALITY_INCREASE_MS,
             maxDurationForQualityDecreaseMs,
             AdaptiveTrackSelection.DEFAULT_MIN_DURATION_TO_RETAIN_AFTER_DISCARD_MS,
@@ -431,6 +375,7 @@ public final class AdaptiveTrackSelectionTest {
             trackGroup,
             selectedAllTracksInGroup(trackGroup),
             mockBandwidthMeter,
+            /* reservedBandwidth= */ 0,
             AdaptiveTrackSelection.DEFAULT_MIN_DURATION_FOR_QUALITY_INCREASE_MS,
             AdaptiveTrackSelection.DEFAULT_MAX_DURATION_FOR_QUALITY_DECREASE_MS,
             durationToRetainAfterDiscardMs,
@@ -461,17 +406,11 @@ public final class AdaptiveTrackSelectionTest {
   }
 
   private static Format videoFormat(int bitrate, int width, int height) {
-    return Format.createVideoSampleFormat(
-        /* id= */ null,
-        /* sampleMimeType= */ MimeTypes.VIDEO_H264,
-        /* codecs= */ null,
-        /* bitrate= */ bitrate,
-        /* maxInputSize= */ Format.NO_VALUE,
-        /* width= */ width,
-        /* height= */ height,
-        /* frameRate= */ Format.NO_VALUE,
-        /* initializationData= */ null,
-        /* drmInitData= */ null);
+    return new Format.Builder()
+        .setSampleMimeType(MimeTypes.VIDEO_H264)
+        .setAverageBitrate(bitrate)
+        .setWidth(width)
+        .setHeight(height)
+        .build();
   }
-
 }

@@ -17,6 +17,7 @@ package com.google.android.exoplayer2.upstream.crypto;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.testutil.TestUtil;
 import com.google.android.exoplayer2.util.Util;
 import java.util.Random;
@@ -25,12 +26,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit tests for {@link AesFlushingCipher}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit tests for {@link AesFlushingCipher}. */
+@RunWith(AndroidJUnit4.class)
 public class AesFlushingCipherTest {
 
   private static final int DATA_LENGTH = 65536;
@@ -78,7 +76,7 @@ public class AesFlushingCipherTest {
 
   // Test a single encrypt and decrypt call.
   @Test
-  public void testSingle() {
+  public void single() {
     byte[] reference = TestUtil.buildTestData(DATA_LENGTH);
     byte[] data = reference.clone();
 
@@ -94,7 +92,7 @@ public class AesFlushingCipherTest {
 
   // Test several encrypt and decrypt calls, each aligned on a 16 byte block size.
   @Test
-  public void testAligned() {
+  public void aligned() {
     byte[] reference = TestUtil.buildTestData(DATA_LENGTH);
     byte[] data = reference.clone();
     Random random = new Random(RANDOM_SEED);
@@ -127,7 +125,7 @@ public class AesFlushingCipherTest {
 
   // Test several encrypt and decrypt calls, not aligned on block boundary.
   @Test
-  public void testUnAligned() {
+  public void unAligned() {
     byte[] reference = TestUtil.buildTestData(DATA_LENGTH);
     byte[] data = reference.clone();
     Random random = new Random(RANDOM_SEED);
@@ -159,7 +157,7 @@ public class AesFlushingCipherTest {
 
   // Test decryption starting from the middle of an encrypted block.
   @Test
-  public void testMidJoin() {
+  public void midJoin() {
     byte[] reference = TestUtil.buildTestData(DATA_LENGTH);
     byte[] data = reference.clone();
     Random random = new Random(RANDOM_SEED);

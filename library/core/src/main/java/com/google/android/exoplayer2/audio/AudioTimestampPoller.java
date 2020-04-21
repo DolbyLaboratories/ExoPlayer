@@ -18,8 +18,9 @@ package com.google.android.exoplayer2.audio;
 import android.annotation.TargetApi;
 import android.media.AudioTimestamp;
 import android.media.AudioTrack;
-import android.support.annotation.IntDef;
-import android.support.annotation.Nullable;
+import androidx.annotation.IntDef;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.util.Util;
 import java.lang.annotation.Documented;
@@ -82,7 +83,7 @@ import java.lang.annotation.RetentionPolicy;
    */
   private static final int INITIALIZING_DURATION_US = 500_000;
 
-  private final @Nullable AudioTimestampV19 audioTimestamp;
+  @Nullable private final AudioTimestampV19 audioTimestamp;
 
   private @State int state;
   private long initializeSystemTimeUs;
@@ -115,6 +116,7 @@ import java.lang.annotation.RetentionPolicy;
    * @param systemTimeUs The current system time, in microseconds.
    * @return Whether the timestamp was updated.
    */
+  @TargetApi(19) // audioTimestamp will be null if Util.SDK_INT < 19.
   public boolean maybePollTimestamp(long systemTimeUs) {
     if (audioTimestamp == null || (systemTimeUs - lastTimestampSampleTimeUs) < sampleIntervalUs) {
       return false;
@@ -220,6 +222,7 @@ import java.lang.annotation.RetentionPolicy;
    * If {@link #maybePollTimestamp(long)} or {@link #hasTimestamp()} returned {@code true}, returns
    * the system time at which the latest timestamp was sampled, in microseconds.
    */
+  @TargetApi(19) // audioTimestamp will be null if Util.SDK_INT < 19.
   public long getTimestampSystemTimeUs() {
     return audioTimestamp != null ? audioTimestamp.getTimestampSystemTimeUs() : C.TIME_UNSET;
   }
@@ -228,6 +231,7 @@ import java.lang.annotation.RetentionPolicy;
    * If {@link #maybePollTimestamp(long)} or {@link #hasTimestamp()} returned {@code true}, returns
    * the latest timestamp's position in frames.
    */
+  @TargetApi(19) // audioTimestamp will be null if Util.SDK_INT < 19.
   public long getTimestampPositionFrames() {
     return audioTimestamp != null ? audioTimestamp.getTimestampPositionFrames() : C.POSITION_UNSET;
   }
@@ -257,7 +261,7 @@ import java.lang.annotation.RetentionPolicy;
     }
   }
 
-  @TargetApi(19)
+  @RequiresApi(19)
   private static final class AudioTimestampV19 {
 
     private final AudioTrack audioTrack;

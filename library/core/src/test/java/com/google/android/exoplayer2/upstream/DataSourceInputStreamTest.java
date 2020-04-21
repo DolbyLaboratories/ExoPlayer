@@ -18,31 +18,30 @@ package com.google.android.exoplayer2.upstream;
 import static com.google.common.truth.Truth.assertThat;
 
 import android.net.Uri;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.testutil.FakeDataSource;
 import com.google.android.exoplayer2.testutil.TestUtil;
 import java.io.IOException;
 import java.util.Arrays;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit tests for {@link DataSourceInputStream}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit tests for {@link DataSourceInputStream}. */
+@RunWith(AndroidJUnit4.class)
 public final class DataSourceInputStreamTest {
 
   private static final byte[] TEST_DATA = TestUtil.buildTestData(16);
 
   @Test
-  public void testReadSingleBytes() throws IOException {
+  public void readSingleBytes() throws IOException {
     DataSourceInputStream inputStream = buildTestInputStream();
     // No bytes read yet.
     assertThat(inputStream.bytesRead()).isEqualTo(0);
     // Read bytes.
     for (int i = 0; i < TEST_DATA.length; i++) {
       int readByte = inputStream.read();
-      assertThat(0 <= readByte && readByte < 256).isTrue();
+      assertThat(0 <= readByte).isTrue();
+      assertThat(readByte < 256).isTrue();
       assertThat(readByte).isEqualTo(TEST_DATA[i] & 0xFF);
       assertThat(inputStream.bytesRead()).isEqualTo(i + 1);
     }
@@ -54,7 +53,7 @@ public final class DataSourceInputStreamTest {
   }
 
   @Test
-  public void testRead() throws IOException {
+  public void read() throws IOException {
     DataSourceInputStream inputStream = buildTestInputStream();
     // Read bytes.
     byte[] readBytes = new byte[TEST_DATA.length];
@@ -77,7 +76,7 @@ public final class DataSourceInputStreamTest {
   }
 
   @Test
-  public void testSkip() throws IOException {
+  public void skip() throws IOException {
     DataSourceInputStream inputStream = buildTestInputStream();
     // Skip bytes.
     long totalBytesSkipped = 0;

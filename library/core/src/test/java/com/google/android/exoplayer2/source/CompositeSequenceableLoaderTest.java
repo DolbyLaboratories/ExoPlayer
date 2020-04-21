@@ -17,15 +17,13 @@ package com.google.android.exoplayer2.source;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit test for {@link CompositeSequenceableLoader}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit test for {@link CompositeSequenceableLoader}. */
+@RunWith(AndroidJUnit4.class)
 public final class CompositeSequenceableLoaderTest {
 
   /**
@@ -33,7 +31,7 @@ public final class CompositeSequenceableLoaderTest {
    * position among all sub-loaders.
    */
   @Test
-  public void testGetBufferedPositionUsReturnsMinimumLoaderBufferedPosition() {
+  public void getBufferedPositionUsReturnsMinimumLoaderBufferedPosition() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -48,7 +46,7 @@ public final class CompositeSequenceableLoaderTest {
    * position that is not {@link C#TIME_END_OF_SOURCE} among all sub-loaders.
    */
   @Test
-  public void testGetBufferedPositionUsReturnsMinimumNonEndOfSourceLoaderBufferedPosition() {
+  public void getBufferedPositionUsReturnsMinimumNonEndOfSourceLoaderBufferedPosition() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -63,11 +61,11 @@ public final class CompositeSequenceableLoaderTest {
   }
 
   /**
-   * Tests that {@link CompositeSequenceableLoader#getBufferedPositionUs()} returns
-   * {@link C#TIME_END_OF_SOURCE} when all sub-loaders have buffered till end-of-source.
+   * Tests that {@link CompositeSequenceableLoader#getBufferedPositionUs()} returns {@link
+   * C#TIME_END_OF_SOURCE} when all sub-loaders have buffered till end-of-source.
    */
   @Test
-  public void testGetBufferedPositionUsReturnsEndOfSourceWhenAllLoaderBufferedTillEndOfSource() {
+  public void getBufferedPositionUsReturnsEndOfSourceWhenAllLoaderBufferedTillEndOfSource() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(
             /* bufferedPositionUs */ C.TIME_END_OF_SOURCE,
@@ -86,7 +84,7 @@ public final class CompositeSequenceableLoaderTest {
    * load position among all sub-loaders.
    */
   @Test
-  public void testGetNextLoadPositionUsReturnMinimumLoaderNextLoadPositionUs() {
+  public void getNextLoadPositionUsReturnMinimumLoaderNextLoadPositionUs() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2001);
     FakeSequenceableLoader loader2 =
@@ -101,7 +99,7 @@ public final class CompositeSequenceableLoaderTest {
    * load position that is not {@link C#TIME_END_OF_SOURCE} among all sub-loaders.
    */
   @Test
-  public void testGetNextLoadPositionUsReturnMinimumNonEndOfSourceLoaderNextLoadPositionUs() {
+  public void getNextLoadPositionUsReturnMinimumNonEndOfSourceLoaderNextLoadPositionUs() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -115,11 +113,11 @@ public final class CompositeSequenceableLoaderTest {
   }
 
   /**
-   * Tests that {@link CompositeSequenceableLoader#getNextLoadPositionUs()} returns
-   * {@link C#TIME_END_OF_SOURCE} when all sub-loaders have next load position at end-of-source.
+   * Tests that {@link CompositeSequenceableLoader#getNextLoadPositionUs()} returns {@link
+   * C#TIME_END_OF_SOURCE} when all sub-loaders have next load position at end-of-source.
    */
   @Test
-  public void testGetNextLoadPositionUsReturnsEndOfSourceWhenAllLoaderLoadingLastChunk() {
+  public void getNextLoadPositionUsReturnsEndOfSourceWhenAllLoaderLoadingLastChunk() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(
             /* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ C.TIME_END_OF_SOURCE);
@@ -137,7 +135,7 @@ public final class CompositeSequenceableLoaderTest {
    * current playback position.
    */
   @Test
-  public void testContinueLoadingOnlyAllowFurthestBehindLoaderToLoadIfNotBehindPlaybackPosition() {
+  public void continueLoadingOnlyAllowFurthestBehindLoaderToLoadIfNotBehindPlaybackPosition() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -151,11 +149,11 @@ public final class CompositeSequenceableLoaderTest {
   }
 
   /**
-   * Tests that {@link CompositeSequenceableLoader#continueLoading(long)} allows all loaders
-   * with next load position behind current playback position to continue loading.
+   * Tests that {@link CompositeSequenceableLoader#continueLoading(long)} allows all loaders with
+   * next load position behind current playback position to continue loading.
    */
   @Test
-  public void testContinueLoadingReturnAllowAllLoadersBehindPlaybackPositionToLoad() {
+  public void continueLoadingReturnAllowAllLoadersBehindPlaybackPositionToLoad() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -172,11 +170,11 @@ public final class CompositeSequenceableLoaderTest {
   }
 
   /**
-   * Tests that {@link CompositeSequenceableLoader#continueLoading(long)} does not allow loader
-   * with next load position at end-of-source to continue loading.
+   * Tests that {@link CompositeSequenceableLoader#continueLoading(long)} does not allow loader with
+   * next load position at end-of-source to continue loading.
    */
   @Test
-  public void testContinueLoadingOnlyNotAllowEndOfSourceLoaderToLoad() {
+  public void continueLoadingOnlyNotAllowEndOfSourceLoaderToLoad() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(
             /* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ C.TIME_END_OF_SOURCE);
@@ -193,11 +191,11 @@ public final class CompositeSequenceableLoaderTest {
 
   /**
    * Tests that {@link CompositeSequenceableLoader#continueLoading(long)} returns true if the loader
-   * with minimum next load position can make progress if next load positions are not behind
-   * current playback position.
+   * with minimum next load position can make progress if next load positions are not behind current
+   * playback position.
    */
   @Test
-  public void testContinueLoadingReturnTrueIfFurthestBehindLoaderCanMakeProgress() {
+  public void continueLoadingReturnTrueIfFurthestBehindLoaderCanMakeProgress() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -216,7 +214,7 @@ public final class CompositeSequenceableLoaderTest {
    * minimum next load position.
    */
   @Test
-  public void testContinueLoadingReturnTrueIfLoaderBehindPlaybackPositionCanMakeProgress() {
+  public void continueLoadingReturnTrueIfLoaderBehindPlaybackPositionCanMakeProgress() {
     FakeSequenceableLoader loader1 =
         new FakeSequenceableLoader(/* bufferedPositionUs */ 1000, /* nextLoadPositionUs */ 2000);
     FakeSequenceableLoader loader2 =
@@ -261,6 +259,11 @@ public final class CompositeSequenceableLoaderTest {
       nextLoadPositionUs += nextChunkDurationUs;
       nextChunkDurationUs = 0;
       return loaded;
+    }
+
+    @Override
+    public boolean isLoading() {
+      return nextChunkDurationUs != 0;
     }
 
     @Override

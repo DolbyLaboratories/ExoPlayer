@@ -15,12 +15,16 @@
  */
 package com.google.android.exoplayer2.decoder;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.CallSuper;
+import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.util.Assertions;
 import java.util.ArrayDeque;
 
-/** Base class for {@link Decoder}s that use their own decode thread. */
+/**
+ * Base class for {@link Decoder}s that use their own decode thread and decode each input buffer
+ * immediately into a corresponding output buffer.
+ */
 @SuppressWarnings("UngroupedOverloads")
 public abstract class SimpleDecoder<
         I extends DecoderInputBuffer, O extends OutputBuffer, E extends Exception>
@@ -61,12 +65,13 @@ public abstract class SimpleDecoder<
     for (int i = 0; i < availableOutputBufferCount; i++) {
       availableOutputBuffers[i] = createOutputBuffer();
     }
-    decodeThread = new Thread() {
-      @Override
-      public void run() {
-        SimpleDecoder.this.run();
-      }
-    };
+    decodeThread =
+        new Thread("ExoPlayer:SimpleDecoder") {
+          @Override
+          public void run() {
+            SimpleDecoder.this.run();
+          }
+        };
     decodeThread.start();
   }
 
@@ -86,6 +91,7 @@ public abstract class SimpleDecoder<
   }
 
   @Override
+  @Nullable
   public final I dequeueInputBuffer() throws E {
     synchronized (lock) {
       maybeThrowException();
@@ -108,6 +114,7 @@ public abstract class SimpleDecoder<
   }
 
   @Override
+  @Nullable
   public final O dequeueOutputBuffer() throws E {
     synchronized (lock) {
       maybeThrowException();
@@ -123,6 +130,7 @@ public abstract class SimpleDecoder<
    *
    * @param outputBuffer The output buffer being released.
    */
+  @CallSuper
   protected void releaseOutputBuffer(O outputBuffer) {
     synchronized (lock) {
       releaseOutputBufferInternal(outputBuffer);
@@ -145,9 +153,11 @@ public abstract class SimpleDecoder<
       while (!queuedOutputBuffers.isEmpty()) {
         queuedOutputBuffers.removeFirst().release();
       }
+      exception = null;
     }
   }
 
+  @CallSuper
   @Override
   public void release() {
     synchronized (lock) {
@@ -220,6 +230,7 @@ public abstract class SimpleDecoder<
       if (inputBuffer.isDecodeOnly()) {
         outputBuffer.addFlag(C.BUFFER_FLAG_DECODE_ONLY);
       }
+      @Nullable E exception;
       try {
         exception = decode(inputBuffer, outputBuffer, resetDecoder);
       } catch (RuntimeException e) {
@@ -233,8 +244,9 @@ public abstract class SimpleDecoder<
         exception = createUnexpectedDecodeException(e);
       }
       if (exception != null) {
-        // Memory barrier to ensure that the decoder exception is visible from the playback thread.
-        synchronized (lock) {}
+        synchronized (lock) {
+          this.exception = exception;
+        }
         return false;
       }
     }
@@ -301,5 +313,6 @@ public abstract class SimpleDecoder<
    * @param reset Whether the decoder must be reset before decoding.
    * @return A decoder exception if an error occurred, or null if decoding was successful.
    */
-  protected abstract @Nullable E decode(I inputBuffer, O outputBuffer, boolean reset);
+  @Nullable
+  protected abstract E decode(I inputBuffer, O outputBuffer, boolean reset);
 }

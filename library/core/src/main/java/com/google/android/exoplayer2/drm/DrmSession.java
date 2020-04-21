@@ -15,25 +15,43 @@
  */
 package com.google.android.exoplayer2.drm;
 
-import android.annotation.TargetApi;
 import android.media.MediaDrm;
-import android.support.annotation.IntDef;
-import android.support.annotation.Nullable;
+import androidx.annotation.IntDef;
+import androidx.annotation.Nullable;
+import com.google.android.exoplayer2.util.MediaSourceEventDispatcher;
+import java.io.IOException;
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Map;
 
-/**
- * A DRM session.
- */
-@TargetApi(16)
-public interface DrmSession<T extends ExoMediaCrypto> {
+/** A DRM session. */
+public interface DrmSession {
 
   /**
-   * Wraps the throwable which is the cause of the error state.
+   * Acquires {@code newSession} then releases {@code previousSession}.
+   *
+   * <p>Invokes {@code newSession's} {@link #acquire(MediaSourceEventDispatcher)} and {@code
+   * previousSession's} {@link #release(MediaSourceEventDispatcher)} in that order (passing {@code
+   * eventDispatcher = null}). Null arguments are ignored. Does nothing if {@code previousSession}
+   * and {@code newSession} are the same session.
    */
-  class DrmSessionException extends Exception {
+  static void replaceSession(
+      @Nullable DrmSession previousSession, @Nullable DrmSession newSession) {
+    if (previousSession == newSession) {
+      // Do nothing.
+      return;
+    }
+    if (newSession != null) {
+      newSession.acquire(/* eventDispatcher= */ null);
+    }
+    if (previousSession != null) {
+      previousSession.release(/* eventDispatcher= */ null);
+    }
+  }
+
+  /** Wraps the throwable which is the cause of the error state. */
+  class DrmSessionException extends IOException {
 
     public DrmSessionException(Throwable cause) {
       super(cause);
@@ -61,13 +79,9 @@ public interface DrmSession<T extends ExoMediaCrypto> {
    * The session is being opened.
    */
   int STATE_OPENING = 2;
-  /**
-   * The session is open, but does not yet have the keys required for decryption.
-   */
+  /** The session is open, but does not have keys required for decryption. */
   int STATE_OPENED = 3;
-  /**
-   * The session is open and has the keys required for decryption.
-   */
+  /** The session is open and has keys required for decryption. */
   int STATE_OPENED_WITH_KEYS = 4;
 
   /**
@@ -77,6 +91,11 @@ public interface DrmSession<T extends ExoMediaCrypto> {
    */
   @State int getState();
 
+  /** Returns whether this session allows playback of clear samples prior to keys being loaded. */
+  default boolean playClearSamplesWithoutKeys() {
+    return false;
+  }
+
   /**
    * Returns the cause of the error state, or null if {@link #getState()} is not {@link
    * #STATE_ERROR}.
@@ -85,11 +104,11 @@ public interface DrmSession<T extends ExoMediaCrypto> {
   DrmSessionException getError();
 
   /**
-   * Returns a {@link ExoMediaCrypto} for the open session, or null if called before the session has
-   * been opened or after it's been released.
+   * Returns an {@link ExoMediaCrypto} for the open session, or null if called before the session
+   * has been opened or after it's been released.
    */
   @Nullable
-  T getMediaCrypto();
+  ExoMediaCrypto getMediaCrypto();
 
   /**
    * Returns a map describing the key status for the session, or null if called before the session
@@ -112,4 +131,23 @@ public interface DrmSession<T extends ExoMediaCrypto> {
    */
   @Nullable
   byte[] getOfflineLicenseKeySetId();
+
+  /**
+   * Increments the reference count. When the caller no longer needs to use the instance, it must
+   * call {@link #release(MediaSourceEventDispatcher)} to decrement the reference count.
+   *
+   * @param eventDispatcher The {@link MediaSourceEventDispatcher} used to route DRM-related events
+   *     dispatched from this session, or null if no event handling is needed.
+   */
+  void acquire(@Nullable MediaSourceEventDispatcher eventDispatcher);
+
+  /**
+   * Decrements the reference count. If the reference count drops to 0 underlying resources are
+   * released, and the instance cannot be re-used.
+   *
+   * @param eventDispatcher The {@link MediaSourceEventDispatcher} to disconnect when the session is
+   *     released (the same instance (possibly null) that was passed by the caller to {@link
+   *     #acquire(MediaSourceEventDispatcher)}).
+   */
+  void release(@Nullable MediaSourceEventDispatcher eventDispatcher);
 }

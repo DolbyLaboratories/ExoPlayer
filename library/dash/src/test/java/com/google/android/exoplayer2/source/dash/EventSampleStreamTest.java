@@ -17,6 +17,7 @@ package com.google.android.exoplayer2.source.dash;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.FormatHolder;
@@ -29,18 +30,18 @@ import com.google.android.exoplayer2.util.MimeTypes;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit test for {@link EventSampleStream}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit test for {@link EventSampleStream}. */
+@RunWith(AndroidJUnit4.class)
 public final class EventSampleStreamTest {
 
   private static final String SCHEME_ID = "urn:test";
   private static final String VALUE = "123";
-  private static final Format FORMAT = Format.createSampleFormat("urn:test/123",
-      MimeTypes.APPLICATION_EMSG, null, Format.NO_VALUE, null);
+  private static final Format FORMAT =
+      new Format.Builder()
+          .setId("urn:test/123")
+          .setSampleMimeType(MimeTypes.APPLICATION_EMSG)
+          .build();
   private static final byte[] MESSAGE_DATA = new byte[] {1, 2, 3, 4};
   private static final long DURATION_MS = 3000;
   private static final long TIME_SCALE = 1000;
@@ -61,7 +62,7 @@ public final class EventSampleStreamTest {
    * return format for the first call.
    */
   @Test
-  public void testReadDataReturnFormatForFirstRead() {
+  public void readDataReturnFormatForFirstRead() {
     EventStream eventStream = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[0], new EventMessage[0]);
     EventSampleStream sampleStream = new EventSampleStream(eventStream, FORMAT, false);
@@ -72,11 +73,11 @@ public final class EventSampleStreamTest {
   }
 
   /**
-   * Tests that a non-dynamic {@link EventSampleStream} will return a buffer with
-   * {@link C#BUFFER_FLAG_END_OF_STREAM} when trying to read sample out-of-bound.
+   * Tests that a non-dynamic {@link EventSampleStream} will return a buffer with {@link
+   * C#BUFFER_FLAG_END_OF_STREAM} when trying to read sample out-of-bound.
    */
   @Test
-  public void testReadDataOutOfBoundReturnEndOfStreamAfterFormatForNonDynamicEventSampleStream() {
+  public void readDataOutOfBoundReturnEndOfStreamAfterFormatForNonDynamicEventSampleStream() {
     EventStream eventStream = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[0], new EventMessage[0]);
     EventSampleStream sampleStream = new EventSampleStream(eventStream, FORMAT, false);
@@ -89,11 +90,11 @@ public final class EventSampleStreamTest {
   }
 
   /**
-   * Tests that a dynamic {@link EventSampleStream} will return {@link C#RESULT_NOTHING_READ}
-   * when trying to read sample out-of-bound.
+   * Tests that a dynamic {@link EventSampleStream} will return {@link C#RESULT_NOTHING_READ} when
+   * trying to read sample out-of-bound.
    */
   @Test
-  public void testReadDataOutOfBoundReturnEndOfStreamAfterFormatForDynamicEventSampleStream() {
+  public void readDataOutOfBoundReturnEndOfStreamAfterFormatForDynamicEventSampleStream() {
     EventStream eventStream = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[0], new EventMessage[0]);
     EventSampleStream sampleStream = new EventSampleStream(eventStream, FORMAT, true);
@@ -109,9 +110,9 @@ public final class EventSampleStreamTest {
    * return sample data after the first call.
    */
   @Test
-  public void testReadDataReturnDataAfterFormat() {
+  public void readDataReturnDataAfterFormat() {
     long presentationTimeUs = 1000000;
-    EventMessage eventMessage = newEventMessageWithIdAndTime(1, presentationTimeUs);
+    EventMessage eventMessage = newEventMessageWithId(1);
     EventStream eventStream = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs}, new EventMessage[] {eventMessage});
     EventSampleStream sampleStream = new EventSampleStream(eventStream, FORMAT, false);
@@ -125,16 +126,16 @@ public final class EventSampleStreamTest {
   }
 
   /**
-   * Tests that {@link EventSampleStream#skipData(long)} will skip until the given position, and
-   * the next {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call
-   * will return sample data from that position.
+   * Tests that {@link EventSampleStream#skipData(long)} will skip until the given position, and the
+   * next {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call will
+   * return sample data from that position.
    */
   @Test
-  public void testSkipDataThenReadDataReturnDataFromSkippedPosition() {
+  public void skipDataThenReadDataReturnDataFromSkippedPosition() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
     EventStream eventStream = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1, presentationTimeUs2},
         new EventMessage[] {eventMessage1, eventMessage2});
@@ -156,11 +157,11 @@ public final class EventSampleStreamTest {
    * will return sample data from that position.
    */
   @Test
-  public void testSeekToUsThenReadDataReturnDataFromSeekPosition() {
+  public void seekToUsThenReadDataReturnDataFromSeekPosition() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
     EventStream eventStream = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1, presentationTimeUs2},
         new EventMessage[] {eventMessage1, eventMessage2});
@@ -177,18 +178,18 @@ public final class EventSampleStreamTest {
 
   /**
    * Tests that {@link EventSampleStream#updateEventStream(EventStream, boolean)} will update the
-   * underlying event stream, but keep the read timestamp, so the next
-   * {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call
-   * will return sample data from after the last read sample timestamp.
+   * underlying event stream, but keep the read timestamp, so the next {@link
+   * EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call will return sample
+   * data from after the last read sample timestamp.
    */
   @Test
-  public void testUpdateEventStreamContinueToReadAfterLastReadSamplePresentationTime() {
+  public void updateEventStreamContinueToReadAfterLastReadSamplePresentationTime() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
     long presentationTimeUs3 = 3000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
-    EventMessage eventMessage3 = newEventMessageWithIdAndTime(3, presentationTimeUs3);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
+    EventMessage eventMessage3 = newEventMessageWithId(3);
     EventStream eventStream1 = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1, presentationTimeUs2},
         new EventMessage[] {eventMessage1, eventMessage2});
@@ -211,18 +212,18 @@ public final class EventSampleStreamTest {
 
   /**
    * Tests that {@link EventSampleStream#updateEventStream(EventStream, boolean)} will update the
-   * underlying event stream, but keep the timestamp the stream has skipped to, so the next
-   * {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call
-   * will return sample data from the skipped position.
+   * underlying event stream, but keep the timestamp the stream has skipped to, so the next {@link
+   * EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call will return sample
+   * data from the skipped position.
    */
   @Test
-  public void testSkipDataThenUpdateStreamContinueToReadFromSkippedPosition() {
+  public void skipDataThenUpdateStreamContinueToReadFromSkippedPosition() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
     long presentationTimeUs3 = 3000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
-    EventMessage eventMessage3 = newEventMessageWithIdAndTime(3, presentationTimeUs3);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
+    EventMessage eventMessage3 = newEventMessageWithId(3);
     EventStream eventStream1 = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1, presentationTimeUs2},
         new EventMessage[] {eventMessage1, eventMessage2});
@@ -242,20 +243,20 @@ public final class EventSampleStreamTest {
   }
 
   /**
-   * Tests that {@link EventSampleStream#skipData(long)} will only skip to the point right after
-   * it last event. A following {@link EventSampleStream#updateEventStream(EventStream, boolean)}
-   * will update the underlying event stream and keep the timestamp the stream has skipped to, so
-   * the next {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call
-   * will return sample data from the skipped position.
+   * Tests that {@link EventSampleStream#skipData(long)} will only skip to the point right after it
+   * last event. A following {@link EventSampleStream#updateEventStream(EventStream, boolean)} will
+   * update the underlying event stream and keep the timestamp the stream has skipped to, so the
+   * next {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call will
+   * return sample data from the skipped position.
    */
   @Test
-  public void testSkipDataThenUpdateStreamContinueToReadDoNotSkippedMoreThanAvailable() {
+  public void skipDataThenUpdateStreamContinueToReadDoNotSkippedMoreThanAvailable() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
     long presentationTimeUs3 = 3000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
-    EventMessage eventMessage3 = newEventMessageWithIdAndTime(3, presentationTimeUs3);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
+    EventMessage eventMessage3 = newEventMessageWithId(3);
     EventStream eventStream1 = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1},
         new EventMessage[] {eventMessage1});
@@ -278,18 +279,18 @@ public final class EventSampleStreamTest {
 
   /**
    * Tests that {@link EventSampleStream#updateEventStream(EventStream, boolean)} will update the
-   * underlying event stream, but keep the timestamp the stream has seek to, so the next
-   * {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call
-   * will return sample data from the seek position.
+   * underlying event stream, but keep the timestamp the stream has seek to, so the next {@link
+   * EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call will return sample
+   * data from the seek position.
    */
   @Test
-  public void testSeekToUsThenUpdateStreamContinueToReadFromSeekPosition() {
+  public void seekToUsThenUpdateStreamContinueToReadFromSeekPosition() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
     long presentationTimeUs3 = 3000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
-    EventMessage eventMessage3 = newEventMessageWithIdAndTime(3, presentationTimeUs3);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
+    EventMessage eventMessage3 = newEventMessageWithId(3);
     EventStream eventStream1 = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1, presentationTimeUs2},
         new EventMessage[] {eventMessage1, eventMessage2});
@@ -310,18 +311,18 @@ public final class EventSampleStreamTest {
 
   /**
    * Tests that {@link EventSampleStream#updateEventStream(EventStream, boolean)} will update the
-   * underlying event stream, but keep the timestamp the stream has seek to, so the next
-   * {@link EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call
-   * will return sample data from the seek position.
+   * underlying event stream, but keep the timestamp the stream has seek to, so the next {@link
+   * EventSampleStream#readData(FormatHolder, DecoderInputBuffer, boolean)} call will return sample
+   * data from the seek position.
    */
   @Test
-  public void testSeekToThenUpdateStreamContinueToReadFromSeekPositionEvenSeekMoreThanAvailable() {
+  public void seekToThenUpdateStreamContinueToReadFromSeekPositionEvenSeekMoreThanAvailable() {
     long presentationTimeUs1 = 1000000;
     long presentationTimeUs2 = 2000000;
     long presentationTimeUs3 = 3000000;
-    EventMessage eventMessage1 = newEventMessageWithIdAndTime(1, presentationTimeUs1);
-    EventMessage eventMessage2 = newEventMessageWithIdAndTime(2, presentationTimeUs2);
-    EventMessage eventMessage3 = newEventMessageWithIdAndTime(3, presentationTimeUs3);
+    EventMessage eventMessage1 = newEventMessageWithId(1);
+    EventMessage eventMessage2 = newEventMessageWithId(2);
+    EventMessage eventMessage3 = newEventMessageWithId(3);
     EventStream eventStream1 = new EventStream(SCHEME_ID, VALUE, TIME_SCALE,
         new long[] {presentationTimeUs1},
         new EventMessage[] {eventMessage1});
@@ -345,12 +346,12 @@ public final class EventSampleStreamTest {
     return sampleStream.readData(formatHolder, inputBuffer, false);
   }
 
-  private EventMessage newEventMessageWithIdAndTime(int id, long presentationTimeUs) {
-    return new EventMessage(SCHEME_ID, VALUE, DURATION_MS, id, MESSAGE_DATA, presentationTimeUs);
+  private EventMessage newEventMessageWithId(int id) {
+    return new EventMessage(SCHEME_ID, VALUE, DURATION_MS, id, MESSAGE_DATA);
   }
 
   private byte[] getEncodedMessage(EventMessage eventMessage) {
-    return eventMessageEncoder.encode(eventMessage, TIME_SCALE);
+    return eventMessageEncoder.encode(eventMessage);
   }
 
 }

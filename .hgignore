@@ -12,13 +12,14 @@ libs
 obj
 lint.xml
 
-# IntelliJ IDEA
+# IntelliJ IDEA & Android Studio
 .idea
 *.iml
 *.ipr
 *.iws
 classes
 gen-external-apklibs
+*.li
 
 # Eclipse
 .project
@@ -54,12 +55,16 @@ bazel-testlogs
 .DS_Store
 cmake-build-debug
 dist
+jacoco.exec
 tmp
 
 # VP9 extension
 extensions/vp9/src/main/jni/libvpx
 extensions/vp9/src/main/jni/libvpx_android_configs
 extensions/vp9/src/main/jni/libyuv
+
+# AV1 extension
+extensions/av1/src/main/jni/libgav1
 
 # Opus extension
 extensions/opus/src/main/jni/libopus
@@ -75,7 +80,3 @@ extensions/cronet/jniLibs/*
 !extensions/cronet/jniLibs/README.md
 extensions/cronet/libs/*
 !extensions/cronet/libs/README.md
-
-# Cast receiver
-cast_receiver_app/external-js
-cast_receiver_app/bazel-cast_receiver_app

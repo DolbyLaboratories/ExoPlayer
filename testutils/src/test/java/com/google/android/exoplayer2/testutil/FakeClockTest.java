@@ -19,21 +19,40 @@ import static com.google.common.truth.Truth.assertThat;
 
 import android.os.ConditionVariable;
 import android.os.HandlerThread;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.google.android.exoplayer2.util.Clock;
 import com.google.android.exoplayer2.util.HandlerWrapper;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
+import org.robolectric.annotation.LooperMode;
 
 /** Unit test for {@link FakeClock}. */
-@RunWith(RobolectricTestRunner.class)
-@Config(shadows = {RobolectricUtil.CustomLooper.class, RobolectricUtil.CustomMessageQueue.class})
+@RunWith(AndroidJUnit4.class)
+@LooperMode(LooperMode.Mode.PAUSED)
 public final class FakeClockTest {
 
   private static final long TIMEOUT_MS = 10000;
+
+  @Test
+  public void currentTimeMillis_withoutBootTime() {
+    FakeClock fakeClock = new FakeClock(/* initialTimeMs= */ 10);
+    assertThat(fakeClock.currentTimeMillis()).isEqualTo(10);
+  }
+
+  @Test
+  public void currentTimeMillis_withBootTime() {
+    FakeClock fakeClock = new FakeClock(/* bootTimeMs= */ 150, /* initialTimeMs= */ 200);
+    assertThat(fakeClock.currentTimeMillis()).isEqualTo(350);
+  }
+
+  @Test
+  public void currentTimeMillis_advanceTime_currentTimeHasAdvanced() {
+    FakeClock fakeClock = new FakeClock(/* bootTimeMs= */ 100, /* initialTimeMs= */ 50);
+    fakeClock.advanceTime(/* timeDiffMs */ 250);
+    assertThat(fakeClock.currentTimeMillis()).isEqualTo(400);
+  }
 
   @Test
   public void testAdvanceTime() {
@@ -89,7 +108,7 @@ public final class FakeClockTest {
 
   @Test
   public void testPostDelayed() {
-    HandlerThread handlerThread = new HandlerThread("FakeClockTest thread");
+    HandlerThread handlerThread = new HandlerThread("FakeClockTest");
     handlerThread.start();
     FakeClock fakeClock = new FakeClock(0);
     HandlerWrapper handler =

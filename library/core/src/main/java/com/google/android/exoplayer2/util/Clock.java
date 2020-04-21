@@ -17,7 +17,7 @@ package com.google.android.exoplayer2.util;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 
 /**
  * An interface through which system clocks can be read and {@link HandlerWrapper}s created. The
@@ -29,6 +29,13 @@ public interface Clock {
    * Default {@link Clock} to use for all non-test cases.
    */
   Clock DEFAULT = new SystemClock();
+
+  /**
+   * Returns the current time in milliseconds since the Unix Epoch.
+   *
+   * @see System#currentTimeMillis()
+   */
+  long currentTimeMillis();
 
   /** @see android.os.SystemClock#elapsedRealtime() */
   long elapsedRealtime();

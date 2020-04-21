@@ -15,17 +15,15 @@
  */
 package com.google.android.exoplayer2.upstream.cache;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.RobolectricTestRunner;
 
-/**
- * Unit tests for {@link LeastRecentlyUsedCacheEvictor}.
- */
-@RunWith(RobolectricTestRunner.class)
+/** Unit tests for {@link LeastRecentlyUsedCacheEvictor}. */
+@RunWith(AndroidJUnit4.class)
 public class LeastRecentlyUsedCacheEvictorTest {
 
   @Before
@@ -34,7 +32,7 @@ public class LeastRecentlyUsedCacheEvictorTest {
   }
 
   @Test
-  public void testContentBiggerThanMaxSizeDoesNotThrowException() throws Exception {
+  public void contentBiggerThanMaxSizeDoesNotThrowException() throws Exception {
     int maxBytes = 100;
     LeastRecentlyUsedCacheEvictor evictor = new LeastRecentlyUsedCacheEvictor(maxBytes);
     evictor.onCacheInitialized();
