@@ -17,143 +17,166 @@
 package com.google.android.exoplayer2.mediacodec;
 
 import android.media.MediaCodec;
+import android.media.MediaCrypto;
 import android.media.MediaFormat;
-import android.os.Handler;
-import android.os.Looper;
+import android.os.HandlerThread;
+import android.view.Surface;
+import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
+import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.decoder.CryptoInfo;
-import com.google.android.exoplayer2.util.Assertions;
+import java.lang.annotation.Documented;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 
 /**
- * A {@link MediaCodecAdapter} that operates the {@link MediaCodec} in asynchronous mode.
- *
- * <p>The AsynchronousMediaCodecAdapter routes callbacks to the current thread's {@link Looper}
- * obtained via {@link Looper#myLooper()}
+ * A {@link MediaCodecAdapter} that operates the underlying {@link MediaCodec} in asynchronous mode,
+ * routes {@link MediaCodec.Callback} callbacks on a dedicated thread that is managed internally,
+ * and queues input buffers asynchronously.
  */
-@RequiresApi(21)
+@RequiresApi(23)
 /* package */ final class AsynchronousMediaCodecAdapter implements MediaCodecAdapter {
-  private final MediaCodecAsyncCallback mediaCodecAsyncCallback;
-  private final Handler handler;
+
+  @Documented
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({STATE_CREATED, STATE_CONFIGURED, STATE_STARTED, STATE_SHUT_DOWN})
+  private @interface State {}
+
+  private static final int STATE_CREATED = 0;
+  private static final int STATE_CONFIGURED = 1;
+  private static final int STATE_STARTED = 2;
+  private static final int STATE_SHUT_DOWN = 3;
+
   private final MediaCodec codec;
-  @Nullable private IllegalStateException internalException;
-  private boolean flushing;
-  private Runnable codecStartRunnable;
+  private final AsynchronousMediaCodecCallback asynchronousMediaCodecCallback;
+  private final AsynchronousMediaCodecBufferEnqueuer bufferEnqueuer;
+  @State private int state;
 
   /**
-   * Create a new {@code AsynchronousMediaCodecAdapter}.
+   * Creates an instance that wraps the specified {@link MediaCodec}.
    *
    * @param codec The {@link MediaCodec} to wrap.
+   * @param trackType One of {@link C#TRACK_TYPE_AUDIO} or {@link C#TRACK_TYPE_VIDEO}. Used for
+   *     labelling the internal thread accordingly.
    */
-  public AsynchronousMediaCodecAdapter(MediaCodec codec) {
-    this(codec, Assertions.checkNotNull(Looper.myLooper()));
+  /* package */ AsynchronousMediaCodecAdapter(MediaCodec codec, int trackType) {
+    this(
+        codec,
+        new HandlerThread(createCallbackThreadLabel(trackType)),
+        new HandlerThread(createQueueingThreadLabel(trackType)));
   }
 
   @VisibleForTesting
-  /* package */ AsynchronousMediaCodecAdapter(MediaCodec codec, Looper looper) {
-    mediaCodecAsyncCallback = new MediaCodecAsyncCallback();
-    handler = new Handler(looper);
+  /* package */ AsynchronousMediaCodecAdapter(
+      MediaCodec codec, HandlerThread callbackThread, HandlerThread enqueueingThread) {
     this.codec = codec;
-    this.codec.setCallback(mediaCodecAsyncCallback);
-    codecStartRunnable = codec::start;
+    this.asynchronousMediaCodecCallback = new AsynchronousMediaCodecCallback(callbackThread);
+    this.bufferEnqueuer = new AsynchronousMediaCodecBufferEnqueuer(codec, enqueueingThread);
+    this.state = STATE_CREATED;
+  }
+
+  @Override
+  public void configure(
+      @Nullable MediaFormat mediaFormat,
+      @Nullable Surface surface,
+      @Nullable MediaCrypto crypto,
+      int flags) {
+    asynchronousMediaCodecCallback.initialize(codec);
+    codec.configure(mediaFormat, surface, crypto, flags);
+    state = STATE_CONFIGURED;
   }
 
   @Override
   public void start() {
-    codecStartRunnable.run();
+    bufferEnqueuer.start();
+    codec.start();
+    state = STATE_STARTED;
   }
 
   @Override
   public void queueInputBuffer(
       int index, int offset, int size, long presentationTimeUs, int flags) {
-    codec.queueInputBuffer(index, offset, size, presentationTimeUs, flags);
+    bufferEnqueuer.queueInputBuffer(index, offset, size, presentationTimeUs, flags);
   }
 
   @Override
   public void queueSecureInputBuffer(
       int index, int offset, CryptoInfo info, long presentationTimeUs, int flags) {
-    codec.queueSecureInputBuffer(
-        index, offset, info.getFrameworkCryptoInfo(), presentationTimeUs, flags);
+    bufferEnqueuer.queueSecureInputBuffer(index, offset, info, presentationTimeUs, flags);
   }
 
   @Override
   public int dequeueInputBufferIndex() {
-    if (flushing) {
-      return MediaCodec.INFO_TRY_AGAIN_LATER;
-    } else {
-      maybeThrowException();
-      return mediaCodecAsyncCallback.dequeueInputBufferIndex();
-    }
+    return asynchronousMediaCodecCallback.dequeueInputBufferIndex();
   }
 
   @Override
   public int dequeueOutputBufferIndex(MediaCodec.BufferInfo bufferInfo) {
-    if (flushing) {
-      return MediaCodec.INFO_TRY_AGAIN_LATER;
-    } else {
-      maybeThrowException();
-      return mediaCodecAsyncCallback.dequeueOutputBufferIndex(bufferInfo);
-    }
+    return asynchronousMediaCodecCallback.dequeueOutputBufferIndex(bufferInfo);
   }
 
   @Override
   public MediaFormat getOutputFormat() {
-    return mediaCodecAsyncCallback.getOutputFormat();
+    return asynchronousMediaCodecCallback.getOutputFormat();
   }
 
   @Override
   public void flush() {
-    clearPendingFlushState();
-    flushing = true;
+    // The order of calls is important:
+    // First, flush the bufferEnqueuer to stop queueing input buffers.
+    // Second, flush the codec to stop producing available input/output buffers.
+    // Third, flush the callback after flushing the codec so that in-flight callbacks are discarded.
+    bufferEnqueuer.flush();
     codec.flush();
-    handler.post(this::onCompleteFlush);
+    // When flushAsync() is completed, start the codec again.
+    asynchronousMediaCodecCallback.flushAsync(/* onFlushCompleted= */ codec::start);
   }
 
   @Override
   public void shutdown() {
-    clearPendingFlushState();
+      if (state == STATE_STARTED) {
+        bufferEnqueuer.shutdown();
+      }
+      if (state == STATE_CONFIGURED || state == STATE_STARTED) {
+      asynchronousMediaCodecCallback.shutdown();
+      }
+      state = STATE_SHUT_DOWN;
+  }
+
+  @Override
+  public MediaCodec getCodec() {
+    return codec;
   }
 
   @VisibleForTesting
-  /* package */ MediaCodec.Callback getMediaCodecCallback() {
-    return mediaCodecAsyncCallback;
-  }
-
-  private void onCompleteFlush() {
-    flushing = false;
-    mediaCodecAsyncCallback.flush();
-    try {
-      codecStartRunnable.run();
-    } catch (IllegalStateException e) {
-      // Catch IllegalStateException directly so that we don't have to wrap it.
-      internalException = e;
-    } catch (Exception e) {
-      internalException = new IllegalStateException(e);
-    }
+  /* package */ void onError(MediaCodec.CodecException error) {
+    asynchronousMediaCodecCallback.onError(codec, error);
   }
 
   @VisibleForTesting
-  /* package */ void setCodecStartRunnable(Runnable codecStartRunnable) {
-    this.codecStartRunnable = codecStartRunnable;
+  /* package */ void onOutputFormatChanged(MediaFormat format) {
+    asynchronousMediaCodecCallback.onOutputFormatChanged(codec, format);
   }
 
-  private void maybeThrowException() throws IllegalStateException {
-    maybeThrowInternalException();
-    mediaCodecAsyncCallback.maybeThrowMediaCodecException();
+  private static String createCallbackThreadLabel(int trackType) {
+    return createThreadLabel(trackType, /* prefix= */ "ExoPlayer:MediaCodecAsyncAdapter:");
   }
 
-  private void maybeThrowInternalException() {
-    if (internalException != null) {
-      IllegalStateException e = internalException;
-      internalException = null;
-      throw e;
+  private static String createQueueingThreadLabel(int trackType) {
+    return createThreadLabel(trackType, /* prefix= */ "ExoPlayer:MediaCodecQueueingThread:");
+  }
+
+  private static String createThreadLabel(int trackType, String prefix) {
+    StringBuilder labelBuilder = new StringBuilder(prefix);
+    if (trackType == C.TRACK_TYPE_AUDIO) {
+      labelBuilder.append("Audio");
+    } else if (trackType == C.TRACK_TYPE_VIDEO) {
+      labelBuilder.append("Video");
+    } else {
+      labelBuilder.append("Unknown(").append(trackType).append(")");
     }
-  }
-
-  /** Clear state related to pending flush events. */
-  private void clearPendingFlushState() {
-    handler.removeCallbacksAndMessages(null);
-    internalException = null;
+    return labelBuilder.toString();
   }
 }

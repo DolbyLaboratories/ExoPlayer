@@ -37,7 +37,7 @@ public final class TsDurationReaderTest {
 
   @Before
   public void setUp() {
-    tsDurationReader = new TsDurationReader();
+    tsDurationReader = new TsDurationReader(TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES);
     seekPositionHolder = new PositionHolder();
   }
 
@@ -52,7 +52,7 @@ public final class TsDurationReaderTest {
         new FakeExtractorInput.Builder()
             .setData(
                 TestUtil.getByteArray(
-                    ApplicationProvider.getApplicationContext(), "ts/bbb_2500ms.ts"))
+                    ApplicationProvider.getApplicationContext(), "media/ts/bbb_2500ms.ts"))
             .setSimulateIOErrors(false)
             .setSimulateUnknownLength(false)
             .setSimulatePartialReads(false)
@@ -76,7 +76,7 @@ public final class TsDurationReaderTest {
         new FakeExtractorInput.Builder()
             .setData(
                 TestUtil.getByteArray(
-                    ApplicationProvider.getApplicationContext(), "ts/bbb_2500ms.ts"))
+                    ApplicationProvider.getApplicationContext(), "media/ts/bbb_2500ms.ts"))
             .setSimulateIOErrors(false)
             .setSimulateUnknownLength(false)
             .setSimulatePartialReads(false)

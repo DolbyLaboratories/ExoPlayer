@@ -17,6 +17,7 @@ package com.google.android.exoplayer2.upstream.cache;
 
 import static com.google.android.exoplayer2.testutil.CacheAsserts.assertCacheEmpty;
 import static com.google.common.truth.Truth.assertThat;
+import static java.lang.Math.min;
 import static org.junit.Assert.fail;
 
 import android.net.Uri;
@@ -75,13 +76,14 @@ public final class CacheDataSourceTest {
     boundedDataSpec = buildDataSpec(/* unbounded= */ false, /* key= */ null);
     unboundedDataSpecWithKey = buildDataSpec(/* unbounded= */ true, DATASPEC_KEY);
     boundedDataSpecWithKey = buildDataSpec(/* unbounded= */ false, DATASPEC_KEY);
-    defaultCacheKey = CacheUtil.DEFAULT_CACHE_KEY_FACTORY.buildCacheKey(unboundedDataSpec);
+    defaultCacheKey = CacheKeyFactory.DEFAULT.buildCacheKey(unboundedDataSpec);
     customCacheKey = "customKey." + defaultCacheKey;
     cacheKeyFactory = dataSpec -> customCacheKey;
 
     tempFolder =
         Util.createTempDirectory(ApplicationProvider.getApplicationContext(), "ExoPlayerTest");
-    cache = new SimpleCache(tempFolder, new NoOpCacheEvictor());
+    cache =
+        new SimpleCache(tempFolder, new NoOpCacheEvictor(), TestUtil.getInMemoryDatabaseProvider());
     upstreamDataSource = new FakeDataSource();
   }
 
@@ -300,7 +302,7 @@ public final class CacheDataSourceTest {
     CacheDataSource cacheDataSource = new CacheDataSource(cache, upstream, 0);
 
     cacheDataSource.open(unboundedDataSpec);
-    TestUtil.readToEnd(cacheDataSource);
+    Util.readToEnd(cacheDataSource);
     cacheDataSource.close();
 
     assertThat(upstream.getAndClearOpenedDataSpecs()).hasLength(1);
@@ -317,7 +319,7 @@ public final class CacheDataSourceTest {
             cache, upstream, CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS);
 
     cacheDataSource.open(unboundedDataSpec);
-    TestUtil.readToEnd(cacheDataSource);
+    Util.readToEnd(cacheDataSource);
     cacheDataSource.close();
 
     assertThat(cache.getKeys()).isEmpty();
@@ -357,15 +359,17 @@ public final class CacheDataSourceTest {
                 .newDefaultData()
                 .appendReadData(1024 * 1024)
                 .endData());
-    CacheUtil.cache(
-        unboundedDataSpec,
-        cache,
-        upstream2,
-        /* progressListener= */ null,
-        /* isCanceled= */ null);
+    CacheWriter cacheWriter =
+        new CacheWriter(
+            new CacheDataSource(cache, upstream2),
+            unboundedDataSpec,
+            /* allowShortContent= */ false,
+            /* temporaryBuffer= */ null,
+            /* progressListener= */ null);
+    cacheWriter.cache();
 
     // Read the rest of the data.
-    TestUtil.readToEnd(cacheDataSource);
+    Util.readToEnd(cacheDataSource);
     cacheDataSource.close();
   }
 
@@ -381,7 +385,7 @@ public final class CacheDataSourceTest {
         .appendReadData(1);
 
     // Lock the content on the cache.
-    CacheSpan cacheSpan = cache.startReadWriteNonBlocking(defaultCacheKey, 0);
+    CacheSpan cacheSpan = cache.startReadWriteNonBlocking(defaultCacheKey, 0, C.LENGTH_UNSET);
     assertThat(cacheSpan).isNotNull();
     assertThat(cacheSpan.isHoleSpan()).isTrue();
 
@@ -405,15 +409,17 @@ public final class CacheDataSourceTest {
                 .newDefaultData()
                 .appendReadData(1024 * 1024)
                 .endData());
-    CacheUtil.cache(
-        unboundedDataSpec,
-        cache,
-        upstream2,
-        /* progressListener= */ null,
-        /* isCanceled= */ null);
+    CacheWriter cacheWriter =
+        new CacheWriter(
+            new CacheDataSource(cache, upstream2),
+            unboundedDataSpec,
+            /* allowShortContent= */ false,
+            /* temporaryBuffer= */ null,
+            /* progressListener= */ null);
+    cacheWriter.cache();
 
     // Read the rest of the data.
-    TestUtil.readToEnd(cacheDataSource);
+    Util.readToEnd(cacheDataSource);
     cacheDataSource.close();
   }
 
@@ -428,12 +434,14 @@ public final class CacheDataSourceTest {
     // Cache the latter half of the data.
     int halfDataLength = 512;
     DataSpec dataSpec = buildDataSpec(halfDataLength, C.LENGTH_UNSET);
-    CacheUtil.cache(
-        dataSpec,
-        cache,
-        upstream,
-        /* progressListener= */ null,
-        /* isCanceled= */ null);
+    CacheWriter cacheWriter =
+        new CacheWriter(
+            new CacheDataSource(cache, upstream),
+            dataSpec,
+            /* allowShortContent= */ false,
+            /* temporaryBuffer= */ null,
+            /* progressListener= */ null);
+    cacheWriter.cache();
 
     // Create cache read-only CacheDataSource.
     CacheDataSource cacheDataSource =
@@ -441,14 +449,14 @@ public final class CacheDataSourceTest {
 
     // Open source and read some data from upstream as the data hasn't cached yet.
     cacheDataSource.open(unboundedDataSpec);
-    TestUtil.readExactly(cacheDataSource, 100);
+    Util.readExactly(cacheDataSource, 100);
 
     // Delete cached data.
-    CacheUtil.remove(unboundedDataSpec, cache, /* cacheKeyFactory= */ null);
+    cache.removeResource(cacheDataSource.getCacheKeyFactory().buildCacheKey(unboundedDataSpec));
     assertCacheEmpty(cache);
 
     // Read the rest of the data.
-    TestUtil.readToEnd(cacheDataSource);
+    Util.readToEnd(cacheDataSource);
     cacheDataSource.close();
   }
 
@@ -463,12 +471,14 @@ public final class CacheDataSourceTest {
     // Cache the latter half of the data.
     int halfDataLength = 512;
     DataSpec dataSpec = buildDataSpec(/* position= */ 0, halfDataLength);
-    CacheUtil.cache(
-        dataSpec,
-        cache,
-        upstream,
-        /* progressListener= */ null,
-        /* isCanceled= */ null);
+    CacheWriter cacheWriter =
+        new CacheWriter(
+            new CacheDataSource(cache, upstream),
+            dataSpec,
+            /* allowShortContent= */ false,
+            /* temporaryBuffer= */ null,
+            /* progressListener= */ null);
+    cacheWriter.cache();
 
     // Create blocking CacheDataSource.
     CacheDataSource cacheDataSource =
@@ -477,7 +487,7 @@ public final class CacheDataSourceTest {
     cacheDataSource.open(unboundedDataSpec);
 
     // Read the first half from upstream as it hasn't cached yet.
-    TestUtil.readExactly(cacheDataSource, halfDataLength);
+    Util.readExactly(cacheDataSource, halfDataLength);
 
     // Delete the cached latter half.
     NavigableSet<CacheSpan> cachedSpans = cache.getCachedSpans(defaultCacheKey);
@@ -488,7 +498,7 @@ public final class CacheDataSourceTest {
     }
 
     // Read the rest of the data.
-    TestUtil.readToEnd(cacheDataSource);
+    Util.readToEnd(cacheDataSource);
     cacheDataSource.close();
   }
 
@@ -541,7 +551,7 @@ public final class CacheDataSourceTest {
     int requestLength = (int) dataSpec.length;
     int readLength = TEST_DATA.length - position;
     if (requestLength != C.LENGTH_UNSET) {
-      readLength = Math.min(readLength, requestLength);
+      readLength = min(readLength, requestLength);
     }
     assertThat(cacheDataSource.open(dataSpec))
         .isEqualTo(unknownLength ? requestLength : readLength);

@@ -26,10 +26,12 @@ import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.PlayerMessage;
 import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.Timeline;
+import com.google.android.exoplayer2.metadata.Metadata;
 import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ShuffleOrder;
 import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
+import com.google.android.exoplayer2.trackselection.TrackSelector;
 import java.util.List;
 
 /**
@@ -313,29 +315,13 @@ public abstract class StubExoPlayer extends BasePlayer implements ExoPlayer {
     throw new UnsupportedOperationException();
   }
 
-  /** @deprecated Use {@link #setPlaybackSpeed(float)} instead. */
-  @SuppressWarnings("deprecation")
-  @Deprecated
   @Override
   public void setPlaybackParameters(@Nullable PlaybackParameters playbackParameters) {
     throw new UnsupportedOperationException();
   }
 
-  /** @deprecated Use {@link #getPlaybackSpeed()} instead. */
-  @SuppressWarnings("deprecation")
-  @Deprecated
   @Override
   public PlaybackParameters getPlaybackParameters() {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public void setPlaybackSpeed(float playbackSpeed) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public float getPlaybackSpeed() {
     throw new UnsupportedOperationException();
   }
 
@@ -350,7 +336,7 @@ public abstract class StubExoPlayer extends BasePlayer implements ExoPlayer {
   }
 
   @Override
-  public void stop(boolean resetStateAndPosition) {
+  public void stop(boolean reset) {
     throw new UnsupportedOperationException();
   }
 
@@ -375,12 +361,23 @@ public abstract class StubExoPlayer extends BasePlayer implements ExoPlayer {
   }
 
   @Override
+  @Nullable
+  public TrackSelector getTrackSelector() {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
   public TrackGroupArray getCurrentTrackGroups() {
     throw new UnsupportedOperationException();
   }
 
   @Override
   public TrackSelectionArray getCurrentTrackSelections() {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public List<Metadata> getCurrentStaticMetadata() {
     throw new UnsupportedOperationException();
   }
 
@@ -456,6 +453,16 @@ public abstract class StubExoPlayer extends BasePlayer implements ExoPlayer {
 
   @Override
   public boolean getPauseAtEndOfMediaItems() {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public void experimentalSetOffloadSchedulingEnabled(boolean offloadSchedulingEnabled) {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public boolean experimentalIsSleepingForOffload() {
     throw new UnsupportedOperationException();
   }
 }

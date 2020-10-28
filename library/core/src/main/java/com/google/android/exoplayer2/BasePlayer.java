@@ -45,12 +45,6 @@ public abstract class BasePlayer implements Player {
   }
 
   @Override
-  public void setMediaItems(List<MediaItem> mediaItems, boolean resetPosition) {
-    setMediaItems(
-        mediaItems, /* startWindowIndex= */ C.INDEX_UNSET, /* startPositionMs= */ C.TIME_UNSET);
-  }
-
-  @Override
   public void setMediaItems(List<MediaItem> mediaItems) {
     setMediaItems(mediaItems, /* resetPosition= */ true);
   }
@@ -158,11 +152,41 @@ public abstract class BasePlayer implements Player {
             getCurrentWindowIndex(), getRepeatModeForNavigation(), getShuffleModeEnabled());
   }
 
+  /**
+   * @deprecated Use {@link #getCurrentMediaItem()} and {@link MediaItem.PlaybackProperties#tag}
+   *     instead.
+   */
+  @Deprecated
   @Override
   @Nullable
   public final Object getCurrentTag() {
     Timeline timeline = getCurrentTimeline();
-    return timeline.isEmpty() ? null : timeline.getWindow(getCurrentWindowIndex(), window).tag;
+    if (timeline.isEmpty()) {
+      return null;
+    }
+    @Nullable
+    MediaItem.PlaybackProperties playbackProperties =
+        timeline.getWindow(getCurrentWindowIndex(), window).mediaItem.playbackProperties;
+    return playbackProperties != null ? playbackProperties.tag : null;
+  }
+
+  @Override
+  @Nullable
+  public final MediaItem getCurrentMediaItem() {
+    Timeline timeline = getCurrentTimeline();
+    return timeline.isEmpty()
+        ? null
+        : timeline.getWindow(getCurrentWindowIndex(), window).mediaItem;
+  }
+
+  @Override
+  public int getMediaItemCount() {
+    return getCurrentTimeline().getWindowCount();
+  }
+
+  @Override
+  public MediaItem getMediaItemAt(int index) {
+    return getCurrentTimeline().getWindow(index, window).mediaItem;
   }
 
   @Override
@@ -224,59 +248,5 @@ public abstract class BasePlayer implements Player {
   private int getRepeatModeForNavigation() {
     @RepeatMode int repeatMode = getRepeatMode();
     return repeatMode == REPEAT_MODE_ONE ? REPEAT_MODE_OFF : repeatMode;
-  }
-
-  /** Holds a listener reference. */
-  protected static final class ListenerHolder {
-
-    /**
-     * The listener on which {link #invoke} will execute {@link ListenerInvocation listener
-     * invocations}.
-     */
-    public final Player.EventListener listener;
-
-    private boolean released;
-
-    public ListenerHolder(Player.EventListener listener) {
-      this.listener = listener;
-    }
-
-    /** Prevents any further {@link ListenerInvocation} to be executed on {@link #listener}. */
-    public void release() {
-      released = true;
-    }
-
-    /**
-     * Executes the given {@link ListenerInvocation} on {@link #listener}. Does nothing if {@link
-     * #release} has been called on this instance.
-     */
-    public void invoke(ListenerInvocation listenerInvocation) {
-      if (!released) {
-        listenerInvocation.invokeListener(listener);
-      }
-    }
-
-    @Override
-    public boolean equals(@Nullable Object other) {
-      if (this == other) {
-        return true;
-      }
-      if (other == null || getClass() != other.getClass()) {
-        return false;
-      }
-      return listener.equals(((ListenerHolder) other).listener);
-    }
-
-    @Override
-    public int hashCode() {
-      return listener.hashCode();
-    }
-  }
-
-  /** Parameterized invocation of a {@link Player.EventListener} method. */
-  protected interface ListenerInvocation {
-
-    /** Executes the invocation on the given {@link Player.EventListener}. */
-    void invokeListener(Player.EventListener listener);
   }
 }

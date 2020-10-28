@@ -32,30 +32,30 @@ import java.util.UUID;
 public final class MediaItem {
 
   /**
-   * Creates a {@link MediaItem} for the given source uri.
+   * Creates a {@link MediaItem} for the given URI.
    *
-   * @param sourceUri The source uri.
-   * @return An {@link MediaItem} for the given source uri.
+   * @param uri The URI.
+   * @return An {@link MediaItem} for the given URI.
    */
-  public static MediaItem fromUri(String sourceUri) {
-    return new MediaItem.Builder().setSourceUri(sourceUri).build();
+  public static MediaItem fromUri(String uri) {
+    return new MediaItem.Builder().setUri(uri).build();
   }
 
   /**
-   * Creates a {@link MediaItem} for the given {@link Uri source uri}.
+   * Creates a {@link MediaItem} for the given {@link Uri URI}.
    *
-   * @param sourceUri The {@link Uri source uri}.
-   * @return An {@link MediaItem} for the given source uri.
+   * @param uri The {@link Uri uri}.
+   * @return An {@link MediaItem} for the given URI.
    */
-  public static MediaItem fromUri(Uri sourceUri) {
-    return new MediaItem.Builder().setSourceUri(sourceUri).build();
+  public static MediaItem fromUri(Uri uri) {
+    return new MediaItem.Builder().setUri(uri).build();
   }
 
   /** A builder for {@link MediaItem} instances. */
   public static final class Builder {
 
     @Nullable private String mediaId;
-    @Nullable private Uri sourceUri;
+    @Nullable private Uri uri;
     @Nullable private String mimeType;
     private long clipStartPositionMs;
     private long clipEndPositionMs;
@@ -67,13 +67,18 @@ public final class MediaItem {
     @Nullable private UUID drmUuid;
     private boolean drmMultiSession;
     private boolean drmPlayClearContentWithoutKey;
+    private boolean drmForceDefaultLicenseUri;
     private List<Integer> drmSessionForClearTypes;
+    @Nullable private byte[] drmKeySetId;
     private List<StreamKey> streamKeys;
     @Nullable private String customCacheKey;
     private List<Subtitle> subtitles;
     @Nullable private Uri adTagUri;
     @Nullable private Object tag;
     @Nullable private MediaMetadata mediaMetadata;
+    private long liveTargetOffsetMs;
+    private float liveMinPlaybackSpeed;
+    private float liveMaxPlaybackSpeed;
 
     /** Creates a builder. */
     public Builder() {
@@ -82,6 +87,9 @@ public final class MediaItem {
       drmLicenseRequestHeaders = Collections.emptyMap();
       streamKeys = Collections.emptyList();
       subtitles = Collections.emptyList();
+      liveTargetOffsetMs = C.TIME_UNSET;
+      liveMinPlaybackSpeed = C.RATE_UNSET;
+      liveMaxPlaybackSpeed = C.RATE_UNSET;
     }
 
     private Builder(MediaItem mediaItem) {
@@ -93,12 +101,15 @@ public final class MediaItem {
       clipStartsAtKeyFrame = mediaItem.clippingProperties.startsAtKeyFrame;
       mediaId = mediaItem.mediaId;
       mediaMetadata = mediaItem.mediaMetadata;
+      liveTargetOffsetMs = mediaItem.liveConfiguration.targetLiveOffsetMs;
+      liveMinPlaybackSpeed = mediaItem.liveConfiguration.minPlaybackSpeed;
+      liveMaxPlaybackSpeed = mediaItem.liveConfiguration.maxPlaybackSpeed;
       @Nullable PlaybackProperties playbackProperties = mediaItem.playbackProperties;
       if (playbackProperties != null) {
         adTagUri = playbackProperties.adTagUri;
         customCacheKey = playbackProperties.customCacheKey;
         mimeType = playbackProperties.mimeType;
-        sourceUri = playbackProperties.sourceUri;
+        uri = playbackProperties.uri;
         streamKeys = playbackProperties.streamKeys;
         subtitles = playbackProperties.subtitles;
         tag = playbackProperties.tag;
@@ -107,17 +118,19 @@ public final class MediaItem {
           drmLicenseUri = drmConfiguration.licenseUri;
           drmLicenseRequestHeaders = drmConfiguration.requestHeaders;
           drmMultiSession = drmConfiguration.multiSession;
+          drmForceDefaultLicenseUri = drmConfiguration.forceDefaultLicenseUri;
           drmPlayClearContentWithoutKey = drmConfiguration.playClearContentWithoutKey;
           drmSessionForClearTypes = drmConfiguration.sessionForClearTypes;
           drmUuid = drmConfiguration.uuid;
+          drmKeySetId = drmConfiguration.getKeySetId();
         }
       }
     }
 
     /**
-     * Sets the optional media id which identifies the media item. If not specified, {@link
-     * #setSourceUri} must be called and the string representation of {@link
-     * PlaybackProperties#sourceUri} is used as the media id.
+     * Sets the optional media ID which identifies the media item. If not specified, {@link #setUri}
+     * must be called and the string representation of {@link PlaybackProperties#uri} is used as the
+     * media ID.
      */
     public Builder setMediaId(@Nullable String mediaId) {
       this.mediaId = mediaId;
@@ -125,30 +138,37 @@ public final class MediaItem {
     }
 
     /**
-     * Sets the optional source uri. If not specified, {@link #setMediaId(String)} must be called.
+     * Sets the optional URI. If not specified, {@link #setMediaId(String)} must be called.
+     *
+     * <p>If {@code uri} is null or unset no {@link PlaybackProperties} object is created during
+     * {@link #build()} and any other {@code Builder} methods that would populate {@link
+     * MediaItem#playbackProperties} are ignored.
      */
-    public Builder setSourceUri(@Nullable String sourceUri) {
-      return setSourceUri(sourceUri == null ? null : Uri.parse(sourceUri));
+    public Builder setUri(@Nullable String uri) {
+      return setUri(uri == null ? null : Uri.parse(uri));
     }
 
     /**
-     * Sets the optional source {@link Uri}. If not specified, {@link #setMediaId(String)} must be
-     * called.
+     * Sets the optional URI. If not specified, {@link #setMediaId(String)} must be called.
+     *
+     * <p>If {@code uri} is null or unset no {@link PlaybackProperties} object is created during
+     * {@link #build()} and any other {@code Builder} methods that would populate {@link
+     * MediaItem#playbackProperties} are ignored.
      */
-    public Builder setSourceUri(@Nullable Uri sourceUri) {
-      this.sourceUri = sourceUri;
+    public Builder setUri(@Nullable Uri uri) {
+      this.uri = uri;
       return this;
     }
 
     /**
-     * Sets the optional mime type.
+     * Sets the optional MIME type.
      *
-     * <p>The mime type may be used as a hint for inferring the type of the media item.
+     * <p>The MIME type may be used as a hint for inferring the type of the media item.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the mime type is used to create a {@link
-     * PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the MIME type is used to create a
+     * {@link PlaybackProperties} object. Otherwise it will be ignored.
      *
-     * @param mimeType The mime type.
+     * @param mimeType The MIME type.
      */
     public Builder setMimeType(@Nullable String mimeType) {
       this.mimeType = mimeType;
@@ -205,11 +225,11 @@ public final class MediaItem {
     }
 
     /**
-     * Sets the optional license server {@link Uri}. If a license uri is set, the {@link
+     * Sets the optional DRM license server URI. If this URI is set, the {@link
      * DrmConfiguration#uuid} needs to be specified as well.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the drm license uri is used to create a
-     * {@link PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the DRM license server URI is used to
+     * create a {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setDrmLicenseUri(@Nullable Uri licenseUri) {
       drmLicenseUri = licenseUri;
@@ -217,11 +237,11 @@ public final class MediaItem {
     }
 
     /**
-     * Sets the optional license server uri as a {@link String}. If a license uri is set, the {@link
+     * Sets the optional DRM license server URI. If this URI is set, the {@link
      * DrmConfiguration#uuid} needs to be specified as well.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the drm license uri is used to create a
-     * {@link PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the DRM license server URI is used to
+     * create a {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setDrmLicenseUri(@Nullable String licenseUri) {
       drmLicenseUri = licenseUri == null ? null : Uri.parse(licenseUri);
@@ -229,11 +249,11 @@ public final class MediaItem {
     }
 
     /**
-     * Sets the optional request headers attached to the drm license request.
+     * Sets the optional request headers attached to the DRM license request.
      *
      * <p>{@code null} or an empty {@link Map} can be used for a reset.
      *
-     * <p>If no valid drm configuration is specified, the drm license request headers are ignored.
+     * <p>If no valid DRM configuration is specified, the DRM license request headers are ignored.
      */
     public Builder setDrmLicenseRequestHeaders(
         @Nullable Map<String, String> licenseRequestHeaders) {
@@ -245,11 +265,11 @@ public final class MediaItem {
     }
 
     /**
-     * Sets the {@link UUID} of the protection scheme. If a drm system uuid is set, the {@link
+     * Sets the {@link UUID} of the protection scheme. If a DRM system UUID is set, the {@link
      * DrmConfiguration#licenseUri} needs to be set as well.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the drm system uuid is used to create a
-     * {@link PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the DRM system UUID is used to create
+     * a {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setDrmUuid(@Nullable UUID uuid) {
       drmUuid = uuid;
@@ -257,13 +277,25 @@ public final class MediaItem {
     }
 
     /**
-     * Sets whether the drm configuration is multi session enabled.
+     * Sets whether the DRM configuration is multi session enabled.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the drm multi session flag is used to
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the DRM multi session flag is used to
      * create a {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setDrmMultiSession(boolean multiSession) {
       drmMultiSession = multiSession;
+      return this;
+    }
+
+    /**
+     * Sets whether to use the DRM license server URI of the media item for key requests that
+     * include their own DRM license server URI.
+     *
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the DRM force default license flag is
+     * used to create a {@link PlaybackProperties} object. Otherwise it will be ignored.
+     */
+    public Builder setDrmForceDefaultLicenseUri(boolean forceDefaultLicenseUri) {
+      this.drmForceDefaultLicenseUri = forceDefaultLicenseUri;
       return this;
     }
 
@@ -277,7 +309,7 @@ public final class MediaItem {
     }
 
     /**
-     * Sets whether a drm session should be used for clear tracks of type {@link C#TRACK_TYPE_VIDEO}
+     * Sets whether a DRM session should be used for clear tracks of type {@link C#TRACK_TYPE_VIDEO}
      * and {@link C#TRACK_TYPE_AUDIO}.
      *
      * <p>This method overrides what has been set by previously calling {@link
@@ -292,10 +324,10 @@ public final class MediaItem {
     }
 
     /**
-     * Sets a list of {@link C}{@code .TRACK_TYPE_*} constants for which to use a drm session even
+     * Sets a list of {@link C}{@code .TRACK_TYPE_*} constants for which to use a DRM session even
      * when the tracks are in the clear.
      *
-     * <p>For the common case of using a drm session for {@link C#TRACK_TYPE_VIDEO} and {@link
+     * <p>For the common case of using a DRM session for {@link C#TRACK_TYPE_VIDEO} and {@link
      * C#TRACK_TYPE_AUDIO} the {@link #setDrmSessionForClearPeriods(boolean)} can be used.
      *
      * <p>This method overrides what has been set by previously calling {@link
@@ -312,13 +344,27 @@ public final class MediaItem {
     }
 
     /**
+     * Sets the key set ID of the offline license.
+     *
+     * <p>The key set ID identifies an offline license. The ID is required to query, renew or
+     * release an existing offline license (see {@code DefaultDrmSessionManager#setMode(int
+     * mode,byte[] offlineLicenseKeySetId)}).
+     *
+     * <p>If no valid DRM configuration is specified, the key set ID is ignored.
+     */
+    public Builder setDrmKeySetId(@Nullable byte[] keySetId) {
+      this.drmKeySetId = keySetId != null ? Arrays.copyOf(keySetId, keySetId.length) : null;
+      return this;
+    }
+
+    /**
      * Sets the optional stream keys by which the manifest is filtered (only used for adaptive
      * streams).
      *
      * <p>{@code null} or an empty {@link List} can be used for a reset.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the stream keys are used to create a
-     * {@link PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the stream keys are used to create a
+     * {@link PlaybackProperties} object. Otherwise they will be ignored.
      */
     public Builder setStreamKeys(@Nullable List<StreamKey> streamKeys) {
       this.streamKeys =
@@ -331,8 +377,8 @@ public final class MediaItem {
     /**
      * Sets the optional custom cache key (only used for progressive streams).
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the custom cache key is used to create a
-     * {@link PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the custom cache key is used to
+     * create a {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setCustomCacheKey(@Nullable String customCacheKey) {
       this.customCacheKey = customCacheKey;
@@ -344,8 +390,8 @@ public final class MediaItem {
      *
      * <p>{@code null} or an empty {@link List} can be used for a reset.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the subtitles are used to create a
-     * {@link PlaybackProperties} object. Otherwise it will be ignored.
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the subtitles are used to create a
+     * {@link PlaybackProperties} object. Otherwise they will be ignored.
      */
     public Builder setSubtitles(@Nullable List<Subtitle> subtitles) {
       this.subtitles =
@@ -358,7 +404,7 @@ public final class MediaItem {
     /**
      * Sets the optional ad tag URI.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the ad tag URI is used to create a
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the ad tag URI is used to create a
      * {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setAdTagUri(@Nullable String adTagUri) {
@@ -369,7 +415,7 @@ public final class MediaItem {
     /**
      * Sets the optional ad tag {@link Uri}.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the ad tag URI is used to create a
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the ad tag URI is used to create a
      * {@link PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setAdTagUri(@Nullable Uri adTagUri) {
@@ -378,11 +424,50 @@ public final class MediaItem {
     }
 
     /**
+     * Sets the optional target offset from the live edge for live streams, in milliseconds.
+     *
+     * <p>See {@code Player#getCurrentLiveOffset()}.
+     *
+     * @param liveTargetOffsetMs The target live offset, in milliseconds, or {@link C#TIME_UNSET} to
+     *     use the media-defined default.
+     */
+    public Builder setLiveTargetOffsetMs(long liveTargetOffsetMs) {
+      this.liveTargetOffsetMs = liveTargetOffsetMs;
+      return this;
+    }
+
+    /**
+     * Sets the optional minimum playback speed for live stream speed adjustment.
+     *
+     * <p>This value is ignored for other stream types.
+     *
+     * @param minPlaybackSpeed The minimum playback speed for live streams, or {@link C#RATE_UNSET}
+     *     to use the media-defined default.
+     */
+    public Builder setLiveMinPlaybackSpeed(float minPlaybackSpeed) {
+      this.liveMinPlaybackSpeed = minPlaybackSpeed;
+      return this;
+    }
+
+    /**
+     * Sets the optional maximum playback speed for live stream speed adjustment.
+     *
+     * <p>This value is ignored for other stream types.
+     *
+     * @param maxPlaybackSpeed The maximum playback speed for live streams, or {@link C#RATE_UNSET}
+     *     to use the media-defined default.
+     */
+    public Builder setLiveMaxPlaybackSpeed(float maxPlaybackSpeed) {
+      this.liveMaxPlaybackSpeed = maxPlaybackSpeed;
+      return this;
+    }
+
+    /**
      * Sets the optional tag for custom attributes. The tag for the media source which will be
      * published in the {@code com.google.android.exoplayer2.Timeline} of the source as {@code
      * com.google.android.exoplayer2.Timeline.Window#tag}.
      *
-     * <p>If a {@link PlaybackProperties#sourceUri} is set, the tag is used to create a {@link
+     * <p>If {@link #setUri} is passed a non-null {@code uri}, the tag is used to create a {@link
      * PlaybackProperties} object. Otherwise it will be ignored.
      */
     public Builder setTag(@Nullable Object tag) {
@@ -402,10 +487,10 @@ public final class MediaItem {
     public MediaItem build() {
       Assertions.checkState(drmLicenseUri == null || drmUuid != null);
       @Nullable PlaybackProperties playbackProperties = null;
-      if (sourceUri != null) {
+      if (uri != null) {
         playbackProperties =
             new PlaybackProperties(
-                sourceUri,
+                uri,
                 mimeType,
                 drmUuid != null
                     ? new DrmConfiguration(
@@ -413,15 +498,17 @@ public final class MediaItem {
                         drmLicenseUri,
                         drmLicenseRequestHeaders,
                         drmMultiSession,
+                        drmForceDefaultLicenseUri,
                         drmPlayClearContentWithoutKey,
-                        drmSessionForClearTypes)
+                        drmSessionForClearTypes,
+                        drmKeySetId)
                     : null,
                 streamKeys,
                 customCacheKey,
                 subtitles,
                 adTagUri,
                 tag);
-        mediaId = mediaId != null ? mediaId : sourceUri.toString();
+        mediaId = mediaId != null ? mediaId : uri.toString();
       }
       return new MediaItem(
           Assertions.checkNotNull(mediaId),
@@ -432,6 +519,7 @@ public final class MediaItem {
               clipRelativeToDefaultPosition,
               clipStartsAtKeyFrame),
           playbackProperties,
+          new LiveConfiguration(liveTargetOffsetMs, liveMinPlaybackSpeed, liveMaxPlaybackSpeed),
           mediaMetadata != null ? mediaMetadata : new MediaMetadata.Builder().build());
     }
   }
@@ -443,15 +531,15 @@ public final class MediaItem {
     public final UUID uuid;
 
     /**
-     * Optional license server {@link Uri}. If {@code null} then the license server must be
+     * Optional DRM license server {@link Uri}. If {@code null} then the DRM license server must be
      * specified by the media.
      */
     @Nullable public final Uri licenseUri;
 
-    /** The headers to attach to the request for the license uri. */
+    /** The headers to attach to the request to the DRM license server. */
     public final Map<String, String> requestHeaders;
 
-    /** Whether the drm configuration is multi session enabled. */
+    /** Whether the DRM configuration is multi session enabled. */
     public final boolean multiSession;
 
     /**
@@ -460,22 +548,40 @@ public final class MediaItem {
      */
     public final boolean playClearContentWithoutKey;
 
-    /** The types of clear tracks for which to use a drm session. */
+    /**
+     * Sets whether to use the DRM license server URI of the media item for key requests that
+     * include their own DRM license server URI.
+     */
+    public final boolean forceDefaultLicenseUri;
+
+    /** The types of clear tracks for which to use a DRM session. */
     public final List<Integer> sessionForClearTypes;
+
+    @Nullable private final byte[] keySetId;
 
     private DrmConfiguration(
         UUID uuid,
         @Nullable Uri licenseUri,
         Map<String, String> requestHeaders,
         boolean multiSession,
+        boolean forceDefaultLicenseUri,
         boolean playClearContentWithoutKey,
-        List<Integer> drmSessionForClearTypes) {
+        List<Integer> drmSessionForClearTypes,
+        @Nullable byte[] keySetId) {
       this.uuid = uuid;
       this.licenseUri = licenseUri;
       this.requestHeaders = requestHeaders;
       this.multiSession = multiSession;
+      this.forceDefaultLicenseUri = forceDefaultLicenseUri;
       this.playClearContentWithoutKey = playClearContentWithoutKey;
       this.sessionForClearTypes = drmSessionForClearTypes;
+      this.keySetId = keySetId != null ? Arrays.copyOf(keySetId, keySetId.length) : null;
+    }
+
+    /** Returns the key set ID of the offline license. */
+    @Nullable
+    public byte[] getKeySetId() {
+      return keySetId != null ? Arrays.copyOf(keySetId, keySetId.length) : null;
     }
 
     @Override
@@ -492,8 +598,10 @@ public final class MediaItem {
           && Util.areEqual(licenseUri, other.licenseUri)
           && Util.areEqual(requestHeaders, other.requestHeaders)
           && multiSession == other.multiSession
+          && forceDefaultLicenseUri == other.forceDefaultLicenseUri
           && playClearContentWithoutKey == other.playClearContentWithoutKey
-          && sessionForClearTypes.equals(other.sessionForClearTypes);
+          && sessionForClearTypes.equals(other.sessionForClearTypes)
+          && Arrays.equals(keySetId, other.keySetId);
     }
 
     @Override
@@ -502,8 +610,10 @@ public final class MediaItem {
       result = 31 * result + (licenseUri != null ? licenseUri.hashCode() : 0);
       result = 31 * result + requestHeaders.hashCode();
       result = 31 * result + (multiSession ? 1 : 0);
+      result = 31 * result + (forceDefaultLicenseUri ? 1 : 0);
       result = 31 * result + (playClearContentWithoutKey ? 1 : 0);
       result = 31 * result + sessionForClearTypes.hashCode();
+      result = 31 * result + Arrays.hashCode(keySetId);
       return result;
     }
   }
@@ -511,13 +621,13 @@ public final class MediaItem {
   /** Properties for local playback. */
   public static final class PlaybackProperties {
 
-    /** The source {@link Uri}. */
-    public final Uri sourceUri;
+    /** The {@link Uri}. */
+    public final Uri uri;
 
     /**
-     * The optional mime type of the item, or {@code null} if unspecified.
+     * The optional MIME type of the item, or {@code null} if unspecified.
      *
-     * <p>The mime type can be used to disambiguate media items that have a uri which does not allow
+     * <p>The MIME type can be used to disambiguate media items that have a URI which does not allow
      * to infer the actual media type.
      */
     @Nullable public final String mimeType;
@@ -545,7 +655,7 @@ public final class MediaItem {
     @Nullable public final Object tag;
 
     private PlaybackProperties(
-        Uri sourceUri,
+        Uri uri,
         @Nullable String mimeType,
         @Nullable DrmConfiguration drmConfiguration,
         List<StreamKey> streamKeys,
@@ -553,7 +663,7 @@ public final class MediaItem {
         List<Subtitle> subtitles,
         @Nullable Uri adTagUri,
         @Nullable Object tag) {
-      this.sourceUri = sourceUri;
+      this.uri = uri;
       this.mimeType = mimeType;
       this.drmConfiguration = drmConfiguration;
       this.streamKeys = streamKeys;
@@ -573,7 +683,7 @@ public final class MediaItem {
       }
       PlaybackProperties other = (PlaybackProperties) obj;
 
-      return sourceUri.equals(other.sourceUri)
+      return uri.equals(other.uri)
           && Util.areEqual(mimeType, other.mimeType)
           && Util.areEqual(drmConfiguration, other.drmConfiguration)
           && streamKeys.equals(other.streamKeys)
@@ -585,7 +695,7 @@ public final class MediaItem {
 
     @Override
     public int hashCode() {
-      int result = sourceUri.hashCode();
+      int result = uri.hashCode();
       result = 31 * result + (mimeType == null ? 0 : mimeType.hashCode());
       result = 31 * result + (drmConfiguration == null ? 0 : drmConfiguration.hashCode());
       result = 31 * result + streamKeys.hashCode();
@@ -593,6 +703,66 @@ public final class MediaItem {
       result = 31 * result + subtitles.hashCode();
       result = 31 * result + (adTagUri == null ? 0 : adTagUri.hashCode());
       result = 31 * result + (tag == null ? 0 : tag.hashCode());
+      return result;
+    }
+  }
+
+  /** Live playback configuration. */
+  public static final class LiveConfiguration {
+
+    /** A live playback configuration with unset values. */
+    public static final LiveConfiguration UNSET =
+        new LiveConfiguration(C.TIME_UNSET, C.RATE_UNSET, C.RATE_UNSET);
+
+    /**
+     * Target live offset, in milliseconds, or {@link C#TIME_UNSET} to use the media-defined
+     * default.
+     */
+    public final long targetLiveOffsetMs;
+
+    /** Minimum playback speed, or {@link C#RATE_UNSET} to use the media-defined default. */
+    public final float minPlaybackSpeed;
+
+    /** Maximum playback speed, or {@link C#RATE_UNSET} to use the media-defined default. */
+    public final float maxPlaybackSpeed;
+
+    /**
+     * Creates a live playback configuration.
+     *
+     * @param targetLiveOffsetMs Target live offset, in milliseconds, or {@link C#TIME_UNSET} to use
+     *     the media-defined default.
+     * @param minPlaybackSpeed Minimum playback speed, or {@link C#RATE_UNSET} to use the
+     *     media-defined default.
+     * @param maxPlaybackSpeed Maximum playback speed, or {@link C#RATE_UNSET} to use the
+     *     media-defined default.
+     */
+    public LiveConfiguration(
+        long targetLiveOffsetMs, float minPlaybackSpeed, float maxPlaybackSpeed) {
+      this.targetLiveOffsetMs = targetLiveOffsetMs;
+      this.minPlaybackSpeed = minPlaybackSpeed;
+      this.maxPlaybackSpeed = maxPlaybackSpeed;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object obj) {
+      if (this == obj) {
+        return true;
+      }
+      if (!(obj instanceof LiveConfiguration)) {
+        return false;
+      }
+      LiveConfiguration other = (LiveConfiguration) obj;
+
+      return targetLiveOffsetMs == other.targetLiveOffsetMs
+          && minPlaybackSpeed == other.minPlaybackSpeed
+          && maxPlaybackSpeed == other.maxPlaybackSpeed;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = (int) (targetLiveOffsetMs ^ (targetLiveOffsetMs >>> 32));
+      result = 31 * result + (minPlaybackSpeed != 0 ? Float.floatToIntBits(minPlaybackSpeed) : 0);
+      result = 31 * result + (maxPlaybackSpeed != 0 ? Float.floatToIntBits(maxPlaybackSpeed) : 0);
       return result;
     }
   }
@@ -608,12 +778,16 @@ public final class MediaItem {
     @Nullable public final String language;
     /** The selection flags. */
     @C.SelectionFlags public final int selectionFlags;
+    /** The role flags. */
+    @C.RoleFlags public final int roleFlags;
+    /** The label. */
+    @Nullable public final String label;
 
     /**
      * Creates an instance.
      *
-     * @param uri The {@link Uri uri} to the subtitle file.
-     * @param mimeType The mime type.
+     * @param uri The {@link Uri URI} to the subtitle file.
+     * @param mimeType The MIME type.
      * @param language The optional language.
      */
     public Subtitle(Uri uri, String mimeType, @Nullable String language) {
@@ -621,19 +795,41 @@ public final class MediaItem {
     }
 
     /**
-     * Creates an instance with the given selection flags.
+     * Creates an instance.
      *
-     * @param uri The {@link Uri uri} to the subtitle file.
-     * @param mimeType The mime type.
+     * @param uri The {@link Uri URI} to the subtitle file.
+     * @param mimeType The MIME type.
      * @param language The optional language.
      * @param selectionFlags The selection flags.
      */
     public Subtitle(
         Uri uri, String mimeType, @Nullable String language, @C.SelectionFlags int selectionFlags) {
+      this(uri, mimeType, language, selectionFlags, /* roleFlags= */ 0, /* label= */ null);
+    }
+
+    /**
+     * Creates an instance.
+     *
+     * @param uri The {@link Uri URI} to the subtitle file.
+     * @param mimeType The MIME type.
+     * @param language The optional language.
+     * @param selectionFlags The selection flags.
+     * @param roleFlags The role flags.
+     * @param label The optional label.
+     */
+    public Subtitle(
+        Uri uri,
+        String mimeType,
+        @Nullable String language,
+        @C.SelectionFlags int selectionFlags,
+        @C.RoleFlags int roleFlags,
+        @Nullable String label) {
       this.uri = uri;
       this.mimeType = mimeType;
       this.language = language;
       this.selectionFlags = selectionFlags;
+      this.roleFlags = roleFlags;
+      this.label = label;
     }
 
     @Override
@@ -650,7 +846,9 @@ public final class MediaItem {
       return uri.equals(other.uri)
           && mimeType.equals(other.mimeType)
           && Util.areEqual(language, other.language)
-          && selectionFlags == other.selectionFlags;
+          && selectionFlags == other.selectionFlags
+          && roleFlags == other.roleFlags
+          && Util.areEqual(label, other.label);
     }
 
     @Override
@@ -659,6 +857,8 @@ public final class MediaItem {
       result = 31 * result + mimeType.hashCode();
       result = 31 * result + (language == null ? 0 : language.hashCode());
       result = 31 * result + selectionFlags;
+      result = 31 * result + roleFlags;
+      result = 31 * result + (label == null ? 0 : label.hashCode());
       return result;
     }
   }
@@ -723,8 +923,8 @@ public final class MediaItem {
 
     @Override
     public int hashCode() {
-      int result = Long.valueOf(startPositionMs).hashCode();
-      result = 31 * result + Long.valueOf(endPositionMs).hashCode();
+      int result = (int) (startPositionMs ^ (startPositionMs >>> 32));
+      result = 31 * result + (int) (endPositionMs ^ (endPositionMs >>> 32));
       result = 31 * result + (relativeToLiveWindow ? 1 : 0);
       result = 31 * result + (relativeToDefaultPosition ? 1 : 0);
       result = 31 * result + (startsAtKeyFrame ? 1 : 0);
@@ -738,6 +938,9 @@ public final class MediaItem {
   /** Optional playback properties. Maybe be {@code null} if shared over process boundaries. */
   @Nullable public final PlaybackProperties playbackProperties;
 
+  /** The live playback configuration. */
+  public final LiveConfiguration liveConfiguration;
+
   /** The media metadata. */
   public final MediaMetadata mediaMetadata;
 
@@ -748,9 +951,11 @@ public final class MediaItem {
       String mediaId,
       ClippingProperties clippingProperties,
       @Nullable PlaybackProperties playbackProperties,
+      LiveConfiguration liveConfiguration,
       MediaMetadata mediaMetadata) {
     this.mediaId = mediaId;
     this.playbackProperties = playbackProperties;
+    this.liveConfiguration = liveConfiguration;
     this.mediaMetadata = mediaMetadata;
     this.clippingProperties = clippingProperties;
   }
@@ -774,6 +979,7 @@ public final class MediaItem {
     return Util.areEqual(mediaId, other.mediaId)
         && clippingProperties.equals(other.clippingProperties)
         && Util.areEqual(playbackProperties, other.playbackProperties)
+        && Util.areEqual(liveConfiguration, other.liveConfiguration)
         && Util.areEqual(mediaMetadata, other.mediaMetadata);
   }
 
@@ -781,6 +987,7 @@ public final class MediaItem {
   public int hashCode() {
     int result = mediaId.hashCode();
     result = 31 * result + (playbackProperties != null ? playbackProperties.hashCode() : 0);
+    result = 31 * result + liveConfiguration.hashCode();
     result = 31 * result + clippingProperties.hashCode();
     result = 31 * result + mediaMetadata.hashCode();
     return result;

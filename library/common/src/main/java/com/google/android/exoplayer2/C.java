@@ -22,6 +22,7 @@ import android.media.AudioManager;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import androidx.annotation.IntDef;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import com.google.android.exoplayer2.util.Util;
 import java.lang.annotation.Documented;
@@ -59,9 +60,10 @@ public final class C {
    */
   public static final int POSITION_UNSET = -1;
 
-  /**
-   * Represents an unset or unknown length.
-   */
+  /** Represents an unset or unknown rate. */
+  public static final float RATE_UNSET = -Float.MAX_VALUE;
+
+  /** Represents an unset or unknown length. */
   public static final int LENGTH_UNSET = -1;
 
   /** Represents an unset or unknown percentage. */
@@ -85,23 +87,34 @@ public final class C {
   public static final int BYTES_PER_FLOAT = 4;
 
   /**
-   * The name of the ASCII charset.
+   * @deprecated Use {@link java.nio.charset.StandardCharsets} or {@link
+   *     com.google.common.base.Charsets} instead.
    */
-  public static final String ASCII_NAME = "US-ASCII";
+  @Deprecated public static final String ASCII_NAME = "US-ASCII";
 
   /**
-   * The name of the UTF-8 charset.
+   * @deprecated Use {@link java.nio.charset.StandardCharsets} or {@link
+   *     com.google.common.base.Charsets} instead.
    */
-  public static final String UTF8_NAME = "UTF-8";
+  @Deprecated public static final String UTF8_NAME = "UTF-8";
 
-  /** The name of the ISO-8859-1 charset. */
-  public static final String ISO88591_NAME = "ISO-8859-1";
+  /**
+   * @deprecated Use {@link java.nio.charset.StandardCharsets} or {@link
+   *     com.google.common.base.Charsets} instead.
+   */
+  @Deprecated public static final String ISO88591_NAME = "ISO-8859-1";
 
-  /** The name of the UTF-16 charset. */
-  public static final String UTF16_NAME = "UTF-16";
+  /**
+   * @deprecated Use {@link java.nio.charset.StandardCharsets} or {@link
+   *     com.google.common.base.Charsets} instead.
+   */
+  @Deprecated public static final String UTF16_NAME = "UTF-16";
 
-  /** The name of the UTF-16 little-endian charset. */
-  public static final String UTF16LE_NAME = "UTF-16LE";
+  /**
+   * @deprecated Use {@link java.nio.charset.StandardCharsets} or {@link
+   *     com.google.common.base.Charsets} instead.
+   */
+  @Deprecated public static final String UTF16LE_NAME = "UTF-16LE";
 
   /**
    * The name of the serif font family.
@@ -165,6 +178,7 @@ public final class C {
     ENCODING_AAC_HE_V2,
     ENCODING_AAC_XHE,
     ENCODING_AAC_ELD,
+    ENCODING_AAC_ER_BSAC,
     ENCODING_AC3,
     ENCODING_E_AC3,
     ENCODING_E_AC3_JOC,
@@ -220,6 +234,8 @@ public final class C {
   public static final int ENCODING_AAC_XHE = AudioFormat.ENCODING_AAC_XHE;
   /** @see AudioFormat#ENCODING_AAC_ELD */
   public static final int ENCODING_AAC_ELD = AudioFormat.ENCODING_AAC_ELD;
+  /** AAC Error Resilient Bit-Sliced Arithmetic Coding. */
+  public static final int ENCODING_AAC_ER_BSAC = 0x40000000;
   /** @see AudioFormat#ENCODING_AC3 */
   public static final int ENCODING_AC3 = AudioFormat.ENCODING_AC3;
   /** @see AudioFormat#ENCODING_E_AC3 */
@@ -549,6 +565,7 @@ public final class C {
   // )
 
   /** @deprecated Use {@code Renderer.VideoScalingMode}. */
+  @SuppressWarnings("deprecation")
   @Documented
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(value = {VIDEO_SCALING_MODE_SCALE_TO_FIT, VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING})
@@ -563,7 +580,9 @@ public final class C {
   public static final int VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING =
       MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING;
   /** @deprecated Use {@code Renderer.VIDEO_SCALING_MODE_DEFAULT}. */
-  @Deprecated public static final int VIDEO_SCALING_MODE_DEFAULT = VIDEO_SCALING_MODE_SCALE_TO_FIT;
+  @SuppressWarnings("deprecation")
+  @Deprecated
+  public static final int VIDEO_SCALING_MODE_DEFAULT = VIDEO_SCALING_MODE_SCALE_TO_FIT;
 
   /**
    * Track selection flags. Possible flag values are {@link #SELECTION_FLAG_DEFAULT}, {@link
@@ -671,12 +690,14 @@ public final class C {
   public static final int TRACK_TYPE_VIDEO = 2;
   /** A type constant for text tracks. */
   public static final int TRACK_TYPE_TEXT = 3;
+  /** A type constant for image tracks. */
+  public static final int TRACK_TYPE_IMAGE = 4;
   /** A type constant for metadata tracks. */
-  public static final int TRACK_TYPE_METADATA = 4;
+  public static final int TRACK_TYPE_METADATA = 5;
   /** A type constant for camera motion tracks. */
-  public static final int TRACK_TYPE_CAMERA_MOTION = 5;
-  /** A type constant for a dummy or empty track. */
-  public static final int TRACK_TYPE_NONE = 6;
+  public static final int TRACK_TYPE_CAMERA_MOTION = 6;
+  /** A type constant for a fake or empty track. */
+  public static final int TRACK_TYPE_NONE = 7;
   /**
    * Applications or extensions may define custom {@code TRACK_TYPE_*} constants greater than or
    * equal to this value.
@@ -963,7 +984,7 @@ public final class C {
 
   /**
    * Mode specifying whether the player should hold a WakeLock and a WifiLock. One of {@link
-   * #WAKE_MODE_NONE}, {@link #WAKE_MODE_LOCAL} and {@link #WAKE_MODE_NETWORK}.
+   * #WAKE_MODE_NONE}, {@link #WAKE_MODE_LOCAL} or {@link #WAKE_MODE_NETWORK}.
    */
   @Documented
   @Retention(RetentionPolicy.SOURCE)
@@ -1099,8 +1120,9 @@ public final class C {
    */
   @RequiresApi(21)
   public static int generateAudioSessionIdV21(Context context) {
-    return ((AudioManager) context.getSystemService(Context.AUDIO_SERVICE))
-        .generateAudioSessionId();
+    @Nullable
+    AudioManager audioManager = ((AudioManager) context.getSystemService(Context.AUDIO_SERVICE));
+    return audioManager == null ? AudioManager.ERROR : audioManager.generateAudioSessionId();
   }
 
 }

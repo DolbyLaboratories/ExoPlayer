@@ -15,15 +15,12 @@
  */
 package com.google.android.exoplayer2;
 
+import androidx.annotation.CheckResult;
 import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.util.Assertions;
+import com.google.android.exoplayer2.util.Util;
 
-/**
- * @deprecated Use {@link Player#setPlaybackSpeed(float)} and {@link
- *     Player.AudioComponent#setSkipSilenceEnabled(boolean)} instead.
- */
-@SuppressWarnings("deprecation")
-@Deprecated
+/** Parameters that apply to playback, including speed setting. */
 public final class PlaybackParameters {
 
   /** The default playback parameters: real-time playback with no silence skipping. */
@@ -32,16 +29,34 @@ public final class PlaybackParameters {
   /** The factor by which playback will be sped up. */
   public final float speed;
 
+  /** The factor by which pitch will be shifted. */
+  public final float pitch;
+
   private final int scaledUsPerMs;
 
   /**
-   * Creates new playback parameters that set the playback speed.
+   * Creates new playback parameters that set the playback speed. The pitch of audio will not be
+   * adjusted, so the effect is to time-stretch the audio.
    *
    * @param speed The factor by which playback will be sped up. Must be greater than zero.
    */
   public PlaybackParameters(float speed) {
+    this(speed, /* pitch= */ 1f);
+  }
+
+  /**
+   * Creates new playback parameters that set the playback speed/pitch.
+   *
+   * @param speed The factor by which playback will be sped up. Must be greater than zero.
+   * @param pitch The factor by which the pitch of audio will be adjusted. Must be greater than
+   *     zero. Useful values are {@code 1} (to time-stretch audio) and the same value as passed in
+   *     as the {@code speed} (to resample audio, which is useful for slow-motion videos).
+   */
+  public PlaybackParameters(float speed, float pitch) {
     Assertions.checkArgument(speed > 0);
+    Assertions.checkArgument(pitch > 0);
     this.speed = speed;
+    this.pitch = pitch;
     scaledUsPerMs = Math.round(speed * 1000f);
   }
 
@@ -56,6 +71,17 @@ public final class PlaybackParameters {
     return timeMs * scaledUsPerMs;
   }
 
+  /**
+   * Returns a copy with the given speed.
+   *
+   * @param speed The new speed.
+   * @return The copied playback parameters.
+   */
+  @CheckResult
+  public PlaybackParameters withSpeed(float speed) {
+    return new PlaybackParameters(speed, pitch);
+  }
+
   @Override
   public boolean equals(@Nullable Object obj) {
     if (this == obj) {
@@ -65,11 +91,19 @@ public final class PlaybackParameters {
       return false;
     }
     PlaybackParameters other = (PlaybackParameters) obj;
-    return this.speed == other.speed;
+    return this.speed == other.speed && this.pitch == other.pitch;
   }
 
   @Override
   public int hashCode() {
-    return Float.floatToRawIntBits(speed);
+    int result = 17;
+    result = 31 * result + Float.floatToRawIntBits(speed);
+    result = 31 * result + Float.floatToRawIntBits(pitch);
+    return result;
+  }
+
+  @Override
+  public String toString() {
+    return Util.formatInvariant("PlaybackParameters(speed=%.2f, pitch=%.2f)", speed, pitch);
   }
 }

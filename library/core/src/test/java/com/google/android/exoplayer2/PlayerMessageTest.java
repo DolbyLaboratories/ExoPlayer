@@ -16,7 +16,8 @@
 package com.google.android.exoplayer2;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.Assert.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
@@ -29,7 +30,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.After;
 import org.junit.Before;
@@ -66,31 +66,27 @@ public class PlayerMessageTest {
   }
 
   @Test
-  public void experimental_blockUntilDelivered_timesOut() throws Exception {
+  public void blockUntilDelivered_timesOut() throws Exception {
     when(clock.elapsedRealtime()).thenReturn(0L).thenReturn(TIMEOUT_MS * 2);
 
-    try {
-      message.send().experimental_blockUntilDelivered(TIMEOUT_MS, clock);
-      fail();
-    } catch (TimeoutException expected) {
-    }
+    assertThrows(
+        TimeoutException.class, () -> message.send().blockUntilDelivered(TIMEOUT_MS, clock));
 
-    // Ensure experimental_blockUntilDelivered() entered the blocking loop
+    // Ensure blockUntilDelivered() entered the blocking loop.
     verify(clock, Mockito.times(2)).elapsedRealtime();
   }
 
   @Test
-  public void experimental_blockUntilDelivered_onAlreadyProcessed_succeeds() throws Exception {
+  public void blockUntilDelivered_onAlreadyProcessed_succeeds() throws Exception {
     when(clock.elapsedRealtime()).thenReturn(0L);
 
     message.send().markAsProcessed(/* isDelivered= */ true);
 
-    assertThat(message.experimental_blockUntilDelivered(TIMEOUT_MS, clock)).isTrue();
+    assertThat(message.blockUntilDelivered(TIMEOUT_MS, clock)).isTrue();
   }
 
   @Test
-  public void experimental_blockUntilDelivered_markAsProcessedWhileBlocked_succeeds()
-      throws Exception {
+  public void blockUntilDelivered_markAsProcessedWhileBlocked_succeeds() throws Exception {
     message.send();
 
     // Use a separate Thread to mark the message as processed.
@@ -114,10 +110,10 @@ public class PlayerMessageTest {
             });
 
     try {
-      assertThat(message.experimental_blockUntilDelivered(TIMEOUT_MS, clock)).isTrue();
-      // Ensure experimental_blockUntilDelivered() entered the blocking loop.
+      assertThat(message.blockUntilDelivered(TIMEOUT_MS, clock)).isTrue();
+      // Ensure blockUntilDelivered() entered the blocking loop.
       verify(clock, Mockito.atLeast(2)).elapsedRealtime();
-      future.get(1, TimeUnit.SECONDS);
+      future.get(1, SECONDS);
     } finally {
       executorService.shutdown();
     }

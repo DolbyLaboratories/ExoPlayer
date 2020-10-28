@@ -15,6 +15,8 @@
  */
 package com.google.android.exoplayer2.video;
 
+import static java.lang.Math.max;
+
 import android.os.Handler;
 import android.os.SystemClock;
 import android.view.Surface;
@@ -116,7 +118,6 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
   private boolean renderedFirstFrameAfterEnable;
   private long initialPositionUs;
   private long joiningDeadlineMs;
-  private boolean waitingForKeys;
   private boolean waitingForFirstSampleInFormat;
 
   private boolean inputStreamEnded;
@@ -211,9 +212,6 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
 
   @Override
   public boolean isReady() {
-    if (waitingForKeys) {
-      return false;
-    }
     if (inputFormat != null
         && (isSourceReady() || outputBuffer != null)
         && (renderedFirstFrameAfterReset || !hasOutput())) {
@@ -293,7 +291,6 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
   @Override
   protected void onDisabled() {
     inputFormat = null;
-    waitingForKeys = false;
     clearReportedVideoSize();
     clearRenderedFirstFrame();
     try {
@@ -305,28 +302,13 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
   }
 
   @Override
-  protected void onStreamChanged(Format[] formats, long offsetUs) throws ExoPlaybackException {
+  protected void onStreamChanged(Format[] formats, long startPositionUs, long offsetUs)
+      throws ExoPlaybackException {
     // TODO: This shouldn't just update the output stream offset as long as there are still buffers
     // of the previous stream in the decoder. It should also make sure to render the first frame of
     // the next stream if the playback position reached the new stream.
     outputStreamOffsetUs = offsetUs;
-    super.onStreamChanged(formats, offsetUs);
-  }
-
-  /**
-   * Called when a decoder has been created and configured.
-   *
-   * <p>The default implementation is a no-op.
-   *
-   * @param name The name of the decoder that was initialized.
-   * @param initializedTimestampMs {@link SystemClock#elapsedRealtime()} when initialization
-   *     finished.
-   * @param initializationDurationMs The time taken to initialize the decoder, in milliseconds.
-   */
-  @CallSuper
-  protected void onDecoderInitialized(
-      String name, long initializedTimestampMs, long initializationDurationMs) {
-    eventDispatcher.decoderInitialized(name, initializedTimestampMs, initializationDurationMs);
+    super.onStreamChanged(formats, startPositionUs, offsetUs);
   }
 
   /**
@@ -336,7 +318,6 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
    */
   @CallSuper
   protected void flushDecoder() throws ExoPlaybackException {
-    waitingForKeys = false;
     buffersInCodecCount = 0;
     if (decoderReinitializationState != REINITIALIZATION_STATE_NONE) {
       releaseDecoder();
@@ -361,9 +342,10 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
     decoderReceivedBuffers = false;
     buffersInCodecCount = 0;
     if (decoder != null) {
-      decoder.release();
-      decoder = null;
       decoderCounters.decoderReleaseCount++;
+      decoder.release();
+      eventDispatcher.decoderReleased(decoder.getName());
+      decoder = null;
     }
     setDecoderDrmSession(null);
   }
@@ -379,9 +361,12 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
     waitingForFirstSampleInFormat = true;
     Format newFormat = Assertions.checkNotNull(formatHolder.format);
     setSourceDrmSession(formatHolder.drmSession);
+    Format oldFormat = inputFormat;
     inputFormat = newFormat;
 
-    if (sourceDrmSession != decoderDrmSession) {
+    if (decoder == null) {
+      maybeInitDecoder();
+    } else if (sourceDrmSession != decoderDrmSession || !canKeepCodec(oldFormat, inputFormat)) {
       if (decoderReceivedBuffers) {
         // Signal end of stream and wait for any final output buffers before re-initialization.
         decoderReinitializationState = REINITIALIZATION_STATE_SIGNAL_END_OF_STREAM;
@@ -507,7 +492,7 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
     droppedFrames += droppedBufferCount;
     consecutiveDroppedFrameCount += droppedBufferCount;
     decoderCounters.maxConsecutiveDroppedBufferCount =
-        Math.max(consecutiveDroppedFrameCount, decoderCounters.maxConsecutiveDroppedBufferCount);
+        max(consecutiveDroppedFrameCount, decoderCounters.maxConsecutiveDroppedBufferCount);
     if (maxDroppedFramesToNotify > 0 && droppedFrames >= maxDroppedFramesToNotify) {
       maybeNotifyDroppedFrames();
     }
@@ -640,6 +625,17 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
    */
   protected abstract void setDecoderOutputMode(@C.VideoOutputMode int outputMode);
 
+  /**
+   * Returns whether the existing decoder can be kept for a new format.
+   *
+   * @param oldFormat The previous format.
+   * @param newFormat The new format.
+   * @return Whether the existing decoder can be kept.
+   */
+  protected boolean canKeepCodec(Format oldFormat, Format newFormat) {
+    return false;
+  }
+
   // Internal methods.
 
   private void setSourceDrmSession(@Nullable DrmSession session) {
@@ -679,7 +675,7 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
       decoder = createDecoder(inputFormat, mediaCrypto);
       setDecoderOutputMode(outputMode);
       long decoderInitializedTimestamp = SystemClock.elapsedRealtime();
-      onDecoderInitialized(
+      eventDispatcher.decoderInitialized(
           decoder.getName(),
           decoderInitializedTimestamp,
           decoderInitializedTimestamp - decoderInitializingTimestamp);
@@ -712,46 +708,36 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
       return false;
     }
 
-    @SampleStream.ReadDataResult int result;
     FormatHolder formatHolder = getFormatHolder();
-    if (waitingForKeys) {
-      // We've already read an encrypted sample into buffer, and are waiting for keys.
-      result = C.RESULT_BUFFER_READ;
-    } else {
-      result = readSource(formatHolder, inputBuffer, false);
+    switch (readSource(formatHolder, inputBuffer, /* formatRequired= */ false)) {
+      case C.RESULT_NOTHING_READ:
+        return false;
+      case C.RESULT_FORMAT_READ:
+        onInputFormatChanged(formatHolder);
+        return true;
+      case C.RESULT_BUFFER_READ:
+        if (inputBuffer.isEndOfStream()) {
+          inputStreamEnded = true;
+          decoder.queueInputBuffer(inputBuffer);
+          inputBuffer = null;
+          return false;
+        }
+        if (waitingForFirstSampleInFormat) {
+          formatQueue.add(inputBuffer.timeUs, inputFormat);
+          waitingForFirstSampleInFormat = false;
+        }
+        inputBuffer.flip();
+        inputBuffer.format = inputFormat;
+        onQueueInputBuffer(inputBuffer);
+        decoder.queueInputBuffer(inputBuffer);
+        buffersInCodecCount++;
+        decoderReceivedBuffers = true;
+        decoderCounters.inputBufferCount++;
+        inputBuffer = null;
+        return true;
+      default:
+        throw new IllegalStateException();
     }
-
-    if (result == C.RESULT_NOTHING_READ) {
-      return false;
-    }
-    if (result == C.RESULT_FORMAT_READ) {
-      onInputFormatChanged(formatHolder);
-      return true;
-    }
-    if (inputBuffer.isEndOfStream()) {
-      inputStreamEnded = true;
-      decoder.queueInputBuffer(inputBuffer);
-      inputBuffer = null;
-      return false;
-    }
-    boolean bufferEncrypted = inputBuffer.isEncrypted();
-    waitingForKeys = shouldWaitForKeys(bufferEncrypted);
-    if (waitingForKeys) {
-      return false;
-    }
-    if (waitingForFirstSampleInFormat) {
-      formatQueue.add(inputBuffer.timeUs, inputFormat);
-      waitingForFirstSampleInFormat = false;
-    }
-    inputBuffer.flip();
-    inputBuffer.colorInfo = inputFormat.colorInfo;
-    onQueueInputBuffer(inputBuffer);
-    decoder.queueInputBuffer(inputBuffer);
-    buffersInCodecCount++;
-    decoderReceivedBuffers = true;
-    decoderCounters.inputBufferCount++;
-    inputBuffer = null;
-    return true;
   }
 
   /**
@@ -887,19 +873,6 @@ public abstract class DecoderVideoRenderer extends BaseRenderer {
     // rendered to the output, report these again immediately.
     maybeRenotifyVideoSizeChanged();
     maybeRenotifyRenderedFirstFrame();
-  }
-
-  private boolean shouldWaitForKeys(boolean bufferEncrypted) throws ExoPlaybackException {
-    DrmSession decoderDrmSession = this.decoderDrmSession;
-    if (decoderDrmSession == null
-        || (!bufferEncrypted && decoderDrmSession.playClearSamplesWithoutKeys())) {
-      return false;
-    }
-    @DrmSession.State int drmSessionState = decoderDrmSession.getState();
-    if (drmSessionState == DrmSession.STATE_ERROR) {
-      throw createRendererException(decoderDrmSession.getError(), inputFormat);
-    }
-    return drmSessionState != DrmSession.STATE_OPENED_WITH_KEYS;
   }
 
   private void setJoiningDeadlineMs() {

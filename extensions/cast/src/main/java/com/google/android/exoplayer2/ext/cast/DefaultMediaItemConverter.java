@@ -45,7 +45,9 @@ public final class DefaultMediaItemConverter implements MediaItemConverter {
   @Override
   public MediaItem toMediaItem(MediaQueueItem item) {
     // `item` came from `toMediaQueueItem()` so the custom JSON data must be set.
-    return getMediaItem(Assertions.checkNotNull(item.getMedia().getCustomData()));
+    MediaInfo mediaInfo = item.getMedia();
+    Assertions.checkNotNull(mediaInfo);
+    return getMediaItem(Assertions.checkNotNull(mediaInfo.getCustomData()));
   }
 
   @Override
@@ -59,7 +61,7 @@ public final class DefaultMediaItemConverter implements MediaItemConverter {
       metadata.putString(MediaMetadata.KEY_TITLE, item.mediaMetadata.title);
     }
     MediaInfo mediaInfo =
-        new MediaInfo.Builder(item.playbackProperties.sourceUri.toString())
+        new MediaInfo.Builder(item.playbackProperties.uri.toString())
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
             .setContentType(item.playbackProperties.mimeType)
             .setMetadata(metadata)
@@ -74,7 +76,7 @@ public final class DefaultMediaItemConverter implements MediaItemConverter {
     try {
       JSONObject mediaItemJson = customData.getJSONObject(KEY_MEDIA_ITEM);
       MediaItem.Builder builder = new MediaItem.Builder();
-      builder.setSourceUri(Uri.parse(mediaItemJson.getString(KEY_URI)));
+      builder.setUri(Uri.parse(mediaItemJson.getString(KEY_URI)));
       if (mediaItemJson.has(KEY_TITLE)) {
         com.google.android.exoplayer2.MediaMetadata mediaMetadata =
             new com.google.android.exoplayer2.MediaMetadata.Builder()
@@ -127,7 +129,7 @@ public final class DefaultMediaItemConverter implements MediaItemConverter {
     Assertions.checkNotNull(mediaItem.playbackProperties);
     JSONObject json = new JSONObject();
     json.put(KEY_TITLE, mediaItem.mediaMetadata.title);
-    json.put(KEY_URI, mediaItem.playbackProperties.sourceUri.toString());
+    json.put(KEY_URI, mediaItem.playbackProperties.uri.toString());
     json.put(KEY_MIME_TYPE, mediaItem.playbackProperties.mimeType);
     if (mediaItem.playbackProperties.drmConfiguration != null) {
       json.put(

@@ -196,7 +196,6 @@ public class DefaultTimeBar extends View implements TimeBar {
   private final Formatter formatter;
   private final Runnable stopScrubbingRunnable;
   private final CopyOnWriteArraySet<OnScrubListener> listeners;
-  private final int[] locationOnScreen;
   private final Point touchPosition;
   private final float density;
 
@@ -228,13 +227,22 @@ public class DefaultTimeBar extends View implements TimeBar {
     this(context, attrs, defStyleAttr, attrs);
   }
 
+  public DefaultTimeBar(
+      Context context,
+      @Nullable AttributeSet attrs,
+      int defStyleAttr,
+      @Nullable AttributeSet timebarAttrs) {
+    this(context, attrs, defStyleAttr, timebarAttrs, 0);
+  }
+
   // Suppress warnings due to usage of View methods in the constructor.
   @SuppressWarnings("nullness:method.invocation.invalid")
   public DefaultTimeBar(
       Context context,
       @Nullable AttributeSet attrs,
       int defStyleAttr,
-      @Nullable AttributeSet timebarAttrs) {
+      @Nullable AttributeSet timebarAttrs,
+      int defStyleRes) {
     super(context, attrs, defStyleAttr);
     seekBounds = new Rect();
     progressBar = new Rect();
@@ -248,7 +256,6 @@ public class DefaultTimeBar extends View implements TimeBar {
     scrubberPaint = new Paint();
     scrubberPaint.setAntiAlias(true);
     listeners = new CopyOnWriteArraySet<>();
-    locationOnScreen = new int[2];
     touchPosition = new Point();
 
     // Calculate the dimensions and paints for drawn elements.
@@ -264,7 +271,10 @@ public class DefaultTimeBar extends View implements TimeBar {
     int defaultScrubberDraggedSize = dpToPx(density, DEFAULT_SCRUBBER_DRAGGED_SIZE_DP);
     if (timebarAttrs != null) {
       TypedArray a =
-          context.getTheme().obtainStyledAttributes(timebarAttrs, R.styleable.DefaultTimeBar, 0, 0);
+          context
+              .getTheme()
+              .obtainStyledAttributes(
+                  timebarAttrs, R.styleable.DefaultTimeBar, defStyleAttr, defStyleRes);
       try {
         scrubberDrawable = a.getDrawable(R.styleable.DefaultTimeBar_scrubber_drawable);
         if (scrubberDrawable != null) {
@@ -452,6 +462,7 @@ public class DefaultTimeBar extends View implements TimeBar {
 
   @Override
   public void addListener(OnScrubListener listener) {
+    Assertions.checkNotNull(listener);
     listeners.add(listener);
   }
 
@@ -798,10 +809,7 @@ public class DefaultTimeBar extends View implements TimeBar {
   }
 
   private Point resolveRelativeTouchPosition(MotionEvent motionEvent) {
-    getLocationOnScreen(locationOnScreen);
-    touchPosition.set(
-        ((int) motionEvent.getRawX()) - locationOnScreen[0],
-        ((int) motionEvent.getRawY()) - locationOnScreen[1]);
+    touchPosition.set((int) motionEvent.getX(), (int) motionEvent.getY());
     return touchPosition;
   }
 

@@ -25,9 +25,7 @@ import com.google.android.exoplayer2.upstream.Allocator;
  */
 public interface LoadControl {
 
-  /**
-   * Called by the player when prepared with a new source.
-   */
+  /** Called by the player when prepared with a new source. */
   void onPrepared();
 
   /**
@@ -87,28 +85,20 @@ public interface LoadControl {
    */
   boolean retainBackBufferFromKeyframe();
 
-  /** @deprecated Use {@link LoadControl#shouldContinueLoading(long, long, float)}. */
-  @Deprecated
-  default boolean shouldContinueLoading(long bufferedDurationUs, float playbackSpeed) {
-    return false;
-  }
-
   /**
    * Called by the player to determine whether it should continue to load the source.
    *
    * @param playbackPositionUs The current playback position in microseconds, relative to the start
    *     of the {@link Timeline.Period period} that will continue to be loaded if this method
-   *     returns {@code true}. If the playback for this period has not yet started, the value will
+   *     returns {@code true}. If playback of this period has not yet started, the value will be
    *     negative and equal in magnitude to the duration of any media in previous periods still to
    *     be played.
    * @param bufferedDurationUs The duration of media that's currently buffered.
    * @param playbackSpeed The current playback speed.
    * @return Whether the loading should continue.
    */
-  default boolean shouldContinueLoading(
-      long playbackPositionUs, long bufferedDurationUs, float playbackSpeed) {
-    return shouldContinueLoading(bufferedDurationUs, playbackSpeed);
-  }
+  boolean shouldContinueLoading(
+      long playbackPositionUs, long bufferedDurationUs, float playbackSpeed);
 
   /**
    * Called repeatedly by the player when it's loading the source, has yet to start playback, and
@@ -121,7 +111,11 @@ public interface LoadControl {
    * @param rebuffering Whether the player is rebuffering. A rebuffer is defined to be caused by
    *     buffer depletion rather than a user action. Hence this parameter is false during initial
    *     buffering and when buffering as a result of a seek operation.
+   * @param targetLiveOffsetUs The desired playback position offset to the live edge in
+   *     microseconds, or {@link C#TIME_UNSET} if the media is not a live stream or no offset is
+   *     configured.
    * @return Whether playback should be allowed to start or resume.
    */
-  boolean shouldStartPlayback(long bufferedDurationUs, float playbackSpeed, boolean rebuffering);
+  boolean shouldStartPlayback(
+      long bufferedDurationUs, float playbackSpeed, boolean rebuffering, long targetLiveOffsetUs);
 }

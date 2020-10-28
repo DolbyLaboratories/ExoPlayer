@@ -15,6 +15,11 @@
  */
 package com.google.android.exoplayer2;
 
+import static com.google.android.exoplayer2.util.Assertions.checkState;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+
+import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.upstream.Allocator;
@@ -32,12 +37,12 @@ public class DefaultLoadControl implements LoadControl {
    * The default minimum duration of media that the player will attempt to ensure is buffered at all
    * times, in milliseconds.
    */
-  public static final int DEFAULT_MIN_BUFFER_MS = 50000;
+  public static final int DEFAULT_MIN_BUFFER_MS = 50_000;
 
   /**
    * The default maximum duration of media that the player will attempt to buffer, in milliseconds.
    */
-  public static final int DEFAULT_MAX_BUFFER_MS = 50000;
+  public static final int DEFAULT_MAX_BUFFER_MS = 50_000;
 
   /**
    * The default duration of media that must be buffered for playback to start or resume following a
@@ -94,7 +99,7 @@ public class DefaultLoadControl implements LoadControl {
   /** Builder for {@link DefaultLoadControl}. */
   public static final class Builder {
 
-    private DefaultAllocator allocator;
+    @Nullable private DefaultAllocator allocator;
     private int minBufferMs;
     private int maxBufferMs;
     private int bufferForPlaybackMs;
@@ -103,7 +108,7 @@ public class DefaultLoadControl implements LoadControl {
     private boolean prioritizeTimeOverSizeThresholds;
     private int backBufferDurationMs;
     private boolean retainBackBufferFromKeyframe;
-    private boolean createDefaultLoadControlCalled;
+    private boolean buildCalled;
 
     /** Constructs a new instance. */
     public Builder() {
@@ -122,10 +127,10 @@ public class DefaultLoadControl implements LoadControl {
      *
      * @param allocator The {@link DefaultAllocator}.
      * @return This builder, for convenience.
-     * @throws IllegalStateException If {@link #createDefaultLoadControl()} has already been called.
+     * @throws IllegalStateException If {@link #build()} has already been called.
      */
     public Builder setAllocator(DefaultAllocator allocator) {
-      Assertions.checkState(!createDefaultLoadControlCalled);
+      checkState(!buildCalled);
       this.allocator = allocator;
       return this;
     }
@@ -143,14 +148,14 @@ public class DefaultLoadControl implements LoadControl {
      *     for playback to resume after a rebuffer, in milliseconds. A rebuffer is defined to be
      *     caused by buffer depletion rather than a user action.
      * @return This builder, for convenience.
-     * @throws IllegalStateException If {@link #createDefaultLoadControl()} has already been called.
+     * @throws IllegalStateException If {@link #build()} has already been called.
      */
     public Builder setBufferDurationsMs(
         int minBufferMs,
         int maxBufferMs,
         int bufferForPlaybackMs,
         int bufferForPlaybackAfterRebufferMs) {
-      Assertions.checkState(!createDefaultLoadControlCalled);
+      checkState(!buildCalled);
       assertGreaterOrEqual(bufferForPlaybackMs, 0, "bufferForPlaybackMs", "0");
       assertGreaterOrEqual(
           bufferForPlaybackAfterRebufferMs, 0, "bufferForPlaybackAfterRebufferMs", "0");
@@ -174,10 +179,10 @@ public class DefaultLoadControl implements LoadControl {
      *
      * @param targetBufferBytes The target buffer size in bytes.
      * @return This builder, for convenience.
-     * @throws IllegalStateException If {@link #createDefaultLoadControl()} has already been called.
+     * @throws IllegalStateException If {@link #build()} has already been called.
      */
     public Builder setTargetBufferBytes(int targetBufferBytes) {
-      Assertions.checkState(!createDefaultLoadControlCalled);
+      checkState(!buildCalled);
       this.targetBufferBytes = targetBufferBytes;
       return this;
     }
@@ -189,10 +194,10 @@ public class DefaultLoadControl implements LoadControl {
      * @param prioritizeTimeOverSizeThresholds Whether the load control prioritizes buffer time
      *     constraints over buffer size constraints.
      * @return This builder, for convenience.
-     * @throws IllegalStateException If {@link #createDefaultLoadControl()} has already been called.
+     * @throws IllegalStateException If {@link #build()} has already been called.
      */
     public Builder setPrioritizeTimeOverSizeThresholds(boolean prioritizeTimeOverSizeThresholds) {
-      Assertions.checkState(!createDefaultLoadControlCalled);
+      checkState(!buildCalled);
       this.prioritizeTimeOverSizeThresholds = prioritizeTimeOverSizeThresholds;
       return this;
     }
@@ -205,20 +210,26 @@ public class DefaultLoadControl implements LoadControl {
      * @param retainBackBufferFromKeyframe Whether the back buffer is retained from the previous
      *     keyframe.
      * @return This builder, for convenience.
-     * @throws IllegalStateException If {@link #createDefaultLoadControl()} has already been called.
+     * @throws IllegalStateException If {@link #build()} has already been called.
      */
     public Builder setBackBuffer(int backBufferDurationMs, boolean retainBackBufferFromKeyframe) {
-      Assertions.checkState(!createDefaultLoadControlCalled);
+      checkState(!buildCalled);
       assertGreaterOrEqual(backBufferDurationMs, 0, "backBufferDurationMs", "0");
       this.backBufferDurationMs = backBufferDurationMs;
       this.retainBackBufferFromKeyframe = retainBackBufferFromKeyframe;
       return this;
     }
 
-    /** Creates a {@link DefaultLoadControl}. */
+    /** @deprecated use {@link #build} instead. */
+    @Deprecated
     public DefaultLoadControl createDefaultLoadControl() {
-      Assertions.checkState(!createDefaultLoadControlCalled);
-      createDefaultLoadControlCalled = true;
+      return build();
+    }
+
+    /** Creates a {@link DefaultLoadControl}. */
+    public DefaultLoadControl build() {
+      checkState(!buildCalled);
+      buildCalled = true;
       if (allocator == null) {
         allocator = new DefaultAllocator(/* trimOnReset= */ true, C.DEFAULT_BUFFER_SEGMENT_SIZE);
       }
@@ -247,7 +258,7 @@ public class DefaultLoadControl implements LoadControl {
   private final boolean retainBackBufferFromKeyframe;
 
   private int targetBufferBytes;
-  private boolean isBuffering;
+  private boolean isLoading;
 
   /** Constructs a new instance, using the {@code DEFAULT_*} constants defined in this class. */
   @SuppressWarnings("deprecation")
@@ -370,7 +381,8 @@ public class DefaultLoadControl implements LoadControl {
   }
 
   @Override
-  public boolean shouldContinueLoading(long bufferedDurationUs, float playbackSpeed) {
+  public boolean shouldContinueLoading(
+      long playbackPositionUs, long bufferedDurationUs, float playbackSpeed) {
     boolean targetBufferSizeReached = allocator.getTotalBytesAllocated() >= targetBufferBytes;
     long minBufferUs = this.minBufferUs;
     if (playbackSpeed > 1) {
@@ -378,28 +390,31 @@ public class DefaultLoadControl implements LoadControl {
       // duration to keep enough media buffered for a playout duration of minBufferUs.
       long mediaDurationMinBufferUs =
           Util.getMediaDurationForPlayoutDuration(minBufferUs, playbackSpeed);
-      minBufferUs = Math.min(mediaDurationMinBufferUs, maxBufferUs);
+      minBufferUs = min(mediaDurationMinBufferUs, maxBufferUs);
     }
     // Prevent playback from getting stuck if minBufferUs is too small.
-    minBufferUs = Math.max(minBufferUs, 500_000);
+    minBufferUs = max(minBufferUs, 500_000);
     if (bufferedDurationUs < minBufferUs) {
-      isBuffering = prioritizeTimeOverSizeThresholds || !targetBufferSizeReached;
-      if (!isBuffering && bufferedDurationUs < 500_000) {
+      isLoading = prioritizeTimeOverSizeThresholds || !targetBufferSizeReached;
+      if (!isLoading && bufferedDurationUs < 500_000) {
         Log.w(
             "DefaultLoadControl",
             "Target buffer size reached with less than 500ms of buffered media data.");
       }
     } else if (bufferedDurationUs >= maxBufferUs || targetBufferSizeReached) {
-      isBuffering = false;
-    } // Else don't change the buffering state
-    return isBuffering;
+      isLoading = false;
+    } // Else don't change the loading state.
+    return isLoading;
   }
 
   @Override
   public boolean shouldStartPlayback(
-      long bufferedDurationUs, float playbackSpeed, boolean rebuffering) {
+      long bufferedDurationUs, float playbackSpeed, boolean rebuffering, long targetLiveOffsetUs) {
     bufferedDurationUs = Util.getPlayoutDurationForMediaDuration(bufferedDurationUs, playbackSpeed);
     long minBufferDurationUs = rebuffering ? bufferForPlaybackAfterRebufferUs : bufferForPlaybackUs;
+    if (targetLiveOffsetUs != C.TIME_UNSET) {
+      minBufferDurationUs = min(targetLiveOffsetUs / 2, minBufferDurationUs);
+    }
     return minBufferDurationUs <= 0
         || bufferedDurationUs >= minBufferDurationUs
         || (!prioritizeTimeOverSizeThresholds
@@ -422,7 +437,7 @@ public class DefaultLoadControl implements LoadControl {
         targetBufferSize += getDefaultBufferSize(renderers[i].getTrackType());
       }
     }
-    return Math.max(DEFAULT_MIN_BUFFER_SIZE, targetBufferSize);
+    return max(DEFAULT_MIN_BUFFER_SIZE, targetBufferSize);
   }
 
   private void reset(boolean resetAllocator) {
@@ -430,7 +445,7 @@ public class DefaultLoadControl implements LoadControl {
         targetBufferBytesOverwrite == C.LENGTH_UNSET
             ? DEFAULT_MIN_BUFFER_SIZE
             : targetBufferBytesOverwrite;
-    isBuffering = false;
+    isLoading = false;
     if (resetAllocator) {
       allocator.reset();
     }

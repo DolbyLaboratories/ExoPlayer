@@ -15,6 +15,8 @@
  */
 package com.google.android.exoplayer2.extractor.mp4;
 
+import static java.lang.Math.min;
+
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import com.google.android.exoplayer2.C;
@@ -26,8 +28,11 @@ import com.google.android.exoplayer2.metadata.id3.CommentFrame;
 import com.google.android.exoplayer2.metadata.id3.Id3Frame;
 import com.google.android.exoplayer2.metadata.id3.InternalFrame;
 import com.google.android.exoplayer2.metadata.id3.TextInformationFrame;
+import com.google.android.exoplayer2.metadata.mp4.MdtaMetadataEntry;
 import com.google.android.exoplayer2.util.Log;
 import com.google.android.exoplayer2.util.ParsableByteArray;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Utilities for handling metadata in MP4. */
 /* package */ final class MetadataUtil {
@@ -280,8 +285,6 @@ import com.google.android.exoplayer2.util.ParsableByteArray;
   private static final int TYPE_TOP_BYTE_COPYRIGHT = 0xA9;
   private static final int TYPE_TOP_BYTE_REPLACEMENT = 0xFD; // Truncated value of \uFFFD.
 
-  private static final String MDTA_KEY_ANDROID_CAPTURE_FPS = "com.android.capture.fps";
-
   private MetadataUtil() {}
 
   /** Updates a {@link Format.Builder} to include metadata from the provided sources. */
@@ -290,7 +293,10 @@ import com.google.android.exoplayer2.util.ParsableByteArray;
       @Nullable Metadata udtaMetadata,
       @Nullable Metadata mdtaMetadata,
       GaplessInfoHolder gaplessInfoHolder,
-      Format.Builder formatBuilder) {
+      Format.Builder formatBuilder,
+      Metadata.Entry... additionalEntries) {
+    Metadata formatMetadata = new Metadata();
+
     if (trackType == C.TRACK_TYPE_AUDIO) {
       if (gaplessInfoHolder.hasGaplessInfo()) {
         formatBuilder
@@ -299,19 +305,30 @@ import com.google.android.exoplayer2.util.ParsableByteArray;
       }
       // We assume all udta metadata is associated with the audio track.
       if (udtaMetadata != null) {
-        formatBuilder.setMetadata(udtaMetadata);
+        formatMetadata = udtaMetadata;
       }
     } else if (trackType == C.TRACK_TYPE_VIDEO && mdtaMetadata != null) {
       // Populate only metadata keys that are known to be specific to video.
+      List<MdtaMetadataEntry> mdtaMetadataEntries = new ArrayList<>();
       for (int i = 0; i < mdtaMetadata.length(); i++) {
         Metadata.Entry entry = mdtaMetadata.get(i);
         if (entry instanceof MdtaMetadataEntry) {
           MdtaMetadataEntry mdtaMetadataEntry = (MdtaMetadataEntry) entry;
-          if (MDTA_KEY_ANDROID_CAPTURE_FPS.equals(mdtaMetadataEntry.key)) {
-            formatBuilder.setMetadata(new Metadata(mdtaMetadataEntry));
+          if (MdtaMetadataEntry.KEY_ANDROID_CAPTURE_FPS.equals(mdtaMetadataEntry.key)
+              || MdtaMetadataEntry.KEY_ANDROID_TEMPORAL_LAYER_COUNT.equals(mdtaMetadataEntry.key)) {
+            mdtaMetadataEntries.add(mdtaMetadataEntry);
           }
         }
       }
+      if (!mdtaMetadataEntries.isEmpty()) {
+        formatMetadata = new Metadata(mdtaMetadataEntries);
+      }
+    }
+
+    formatMetadata = formatMetadata.copyWithAppendedEntries(additionalEntries);
+
+    if (formatMetadata.length() > 0) {
+      formatBuilder.setMetadata(formatMetadata);
     }
   }
 
@@ -460,7 +477,7 @@ import com.google.android.exoplayer2.util.ParsableByteArray;
       boolean isBoolean) {
     int value = parseUint8AttributeValue(data);
     if (isBoolean) {
-      value = Math.min(1, value);
+      value = min(1, value);
     }
     if (value >= 0) {
       return isTextInformationFrame

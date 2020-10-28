@@ -16,7 +16,6 @@
 package com.google.android.exoplayer2.testutil;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
@@ -39,12 +38,13 @@ import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DataSpec;
 import com.google.android.exoplayer2.util.Assertions;
 import com.google.android.exoplayer2.util.Util;
+import com.google.common.collect.ImmutableList;
+import com.google.common.primitives.Bytes;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Random;
 
 /**
@@ -53,52 +53,6 @@ import java.util.Random;
 public class TestUtil {
 
   private TestUtil() {}
-
-  /**
-   * Given an open {@link DataSource}, repeatedly calls {@link DataSource#read(byte[], int, int)}
-   * until {@link C#RESULT_END_OF_INPUT} is returned.
-   *
-   * @param dataSource The source from which to read.
-   * @return The concatenation of all read data.
-   * @throws IOException If an error occurs reading from the source.
-   */
-  public static byte[] readToEnd(DataSource dataSource) throws IOException {
-    byte[] data = new byte[1024];
-    int position = 0;
-    int bytesRead = 0;
-    while (bytesRead != C.RESULT_END_OF_INPUT) {
-      if (position == data.length) {
-        data = Arrays.copyOf(data, data.length * 2);
-      }
-      bytesRead = dataSource.read(data, position, data.length - position);
-      if (bytesRead != C.RESULT_END_OF_INPUT) {
-        position += bytesRead;
-      }
-    }
-    return Arrays.copyOf(data, position);
-  }
-
-  /**
-   * Given an open {@link DataSource}, repeatedly calls {@link DataSource#read(byte[], int, int)}
-   * until exactly {@code length} bytes have been read.
-   *
-   * @param dataSource The source from which to read.
-   * @return The read data.
-   * @throws IOException If an error occurs reading from the source.
-   */
-  public static byte[] readExactly(DataSource dataSource, int length) throws IOException {
-    byte[] data = new byte[length];
-    int position = 0;
-    while (position < length) {
-      int bytesRead = dataSource.read(data, position, data.length - position);
-      if (bytesRead == C.RESULT_END_OF_INPUT) {
-        fail("Not enough data could be read: " + position + " < " + length);
-      } else {
-        position += bytesRead;
-      }
-    }
-    return data;
-  }
 
   /**
    * Equivalent to {@code buildTestData(length, length)}.
@@ -153,49 +107,39 @@ public class TestUtil {
   /**
    * Converts an array of integers in the range [0, 255] into an equivalent byte array.
    *
-   * @param intArray An array of integers, all of which must be in the range [0, 255].
+   * @param bytes An array of integers, all of which must be in the range [0, 255].
    * @return The equivalent byte array.
    */
-  public static byte[] createByteArray(int... intArray) {
-    byte[] byteArray = new byte[intArray.length];
+  public static byte[] createByteArray(int... bytes) {
+    byte[] byteArray = new byte[bytes.length];
     for (int i = 0; i < byteArray.length; i++) {
-      Assertions.checkState(0x00 <= intArray[i] && intArray[i] <= 0xFF);
-      byteArray[i] = (byte) intArray[i];
+      Assertions.checkState(0x00 <= bytes[i] && bytes[i] <= 0xFF);
+      byteArray[i] = (byte) bytes[i];
     }
     return byteArray;
   }
 
   /**
-   * Concatenates the provided byte arrays.
+   * Converts an array of integers in the range [0, 255] into an equivalent byte list.
    *
-   * @param byteArrays The byte arrays to concatenate.
-   * @return The concatenated result.
+   * @param bytes An array of integers, all of which must be in the range [0, 255].
+   * @return The equivalent byte list.
    */
-  public static byte[] joinByteArrays(byte[]... byteArrays) {
-    int length = 0;
-    for (byte[] byteArray : byteArrays) {
-      length += byteArray.length;
-    }
-    byte[] joined = new byte[length];
-    length = 0;
-    for (byte[] byteArray : byteArrays) {
-      System.arraycopy(byteArray, 0, joined, length, byteArray.length);
-      length += byteArray.length;
-    }
-    return joined;
+  public static ImmutableList<Byte> createByteList(int... bytes) {
+    return ImmutableList.copyOf(Bytes.asList(createByteArray(bytes)));
   }
 
-  /** Writes one byte long dummy test data to the file and returns it. */
+  /** Writes one byte long test data to the file and returns it. */
   public static File createTestFile(File directory, String name) throws IOException {
     return createTestFile(directory, name, /* length= */ 1);
   }
 
-  /** Writes dummy test data with the specified length to the file and returns it. */
+  /** Writes test data with the specified length to the file and returns it. */
   public static File createTestFile(File directory, String name, long length) throws IOException {
     return createTestFile(new File(directory, name), length);
   }
 
-  /** Writes dummy test data with the specified length to the file and returns it. */
+  /** Writes test data with the specified length to the file and returns it. */
   public static File createTestFile(File file, long length) throws IOException {
     FileOutputStream output = new FileOutputStream(file);
     for (long i = 0; i < length; i++) {
@@ -258,7 +202,7 @@ public class TestUtil {
     try {
       long length = dataSource.open(dataSpec);
       assertThat(length).isEqualTo(expectKnownLength ? expectedData.length : C.LENGTH_UNSET);
-      byte[] readData = readToEnd(dataSource);
+      byte[] readData = Util.readToEnd(dataSource);
       assertThat(readData).isEqualTo(expectedData);
     } finally {
       dataSource.close();
@@ -268,10 +212,10 @@ public class TestUtil {
   /** Returns whether two {@link android.media.MediaCodec.BufferInfo BufferInfos} are equal. */
   public static void assertBufferInfosEqual(
       MediaCodec.BufferInfo expected, MediaCodec.BufferInfo actual) {
-    assertThat(expected.flags).isEqualTo(actual.flags);
-    assertThat(expected.offset).isEqualTo(actual.offset);
-    assertThat(expected.presentationTimeUs).isEqualTo(actual.presentationTimeUs);
-    assertThat(expected.size).isEqualTo(actual.size);
+    assertThat(actual.flags).isEqualTo(expected.flags);
+    assertThat(actual.offset).isEqualTo(expected.offset);
+    assertThat(actual.presentationTimeUs).isEqualTo(expected.presentationTimeUs);
+    assertThat(actual.size).isEqualTo(expected.size);
   }
 
   /**
@@ -332,7 +276,8 @@ public class TestUtil {
 
   /**
    * Reads from the given input using the given {@link Extractor}, until it can produce the {@link
-   * SeekMap} and all of the tracks have been identified, or until the extractor encounters EOF.
+   * SeekMap} and all of the track formats have been identified, or until the extractor encounters
+   * EOF.
    *
    * @param extractor The {@link Extractor} to extractor from input.
    * @param output The {@link FakeTrackOutput} to store the extracted {@link SeekMap} and track.
@@ -351,10 +296,17 @@ public class TestUtil {
     int readResult = Extractor.RESULT_CONTINUE;
     while (true) {
       try {
-        // Keep reading until we can get the seek map
+        // Keep reading until we get the seek map and the track information.
         while (readResult == Extractor.RESULT_CONTINUE
             && (output.seekMap == null || !output.tracksEnded)) {
           readResult = extractor.read(input, positionHolder);
+        }
+        for (int i = 0; i < output.trackOutputs.size(); i++) {
+          int trackId = output.trackOutputs.keyAt(i);
+          while (readResult == Extractor.RESULT_CONTINUE
+              && output.trackOutputs.get(trackId).lastFormat == null) {
+            readResult = extractor.read(input, positionHolder);
+          }
         }
       } finally {
         Util.closeQuietly(dataSource);
@@ -483,4 +435,5 @@ public class TestUtil {
     buffer.data.flip();
     return buffer;
   }
+
 }
