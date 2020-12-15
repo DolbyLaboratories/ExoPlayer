@@ -17,170 +17,250 @@ package com.google.android.exoplayer2.video;
 
 import android.annotation.TargetApi;
 import android.content.Context;
+import android.hardware.display.DisplayManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
 import android.view.Choreographer;
 import android.view.Choreographer.FrameCallback;
+import android.view.Display;
 import android.view.WindowManager;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import com.google.android.exoplayer2.C;
+import com.google.android.exoplayer2.Format;
+import com.google.android.exoplayer2.Renderer;
+import com.google.android.exoplayer2.util.Log;
+import com.google.android.exoplayer2.util.Util;
 
 /**
- * Makes a best effort to adjust frame release timestamps for a smoother visual result.
+ * Makes a best effort to adjust frame release timestamps for a video {@link Renderer} in order to
+ * achieve a smoother visual result.
  */
-@TargetApi(16)
 public final class VideoFrameReleaseTimeHelper {
 
-  private static final long CHOREOGRAPHER_SAMPLE_DELAY_MILLIS = 500;
-  private static final long MAX_ALLOWED_DRIFT_NS = 20000000;
+  private static final String TAG = "VideoFrameReleaseTimeHelper";
 
+  /** The period between sampling display VSYNC timestamps, in milliseconds. */
+  private static final long VSYNC_SAMPLE_UPDATE_PERIOD_MS = 500;
+  /**
+   * The maximum adjustment that can be made to a frame release timestamp, in nanoseconds, excluding
+   * the part of the adjustment that aligns frame release timestamps with the display VSYNC.
+   */
+  private static final long MAX_ALLOWED_ADJUSTMENT_NS = 20_000_000;
+  /**
+   * If a frame is targeted to a display VSYNC with timestamp {@code vsyncTime}, the adjusted frame
+   * release timestamp will be calculated as {@code releaseTime = vsyncTime - ((vsyncDuration *
+   * VSYNC_OFFSET_PERCENTAGE) / 100)}.
+   */
   private static final long VSYNC_OFFSET_PERCENTAGE = 80;
-  private static final int MIN_FRAMES_FOR_ADJUSTMENT = 6;
 
-  private final VSyncSampler vsyncSampler;
-  private final boolean useDefaultDisplayVsync;
-  private final long vsyncDurationNs;
-  private final long vsyncOffsetNs;
+  private final FixedFrameRateEstimator fixedFrameRateEstimator;
+  @Nullable private final WindowManager windowManager;
+  @Nullable private final VSyncSampler vsyncSampler;
+  @Nullable private final DefaultDisplayListener displayListener;
 
-  private long lastFramePresentationTimeUs;
-  private long adjustedLastFrameTimeNs;
-  private long pendingAdjustedFrameTimeNs;
+  private float formatFrameRate;
+  private double playbackSpeed;
 
-  private boolean haveSync;
-  private long syncUnadjustedReleaseTimeNs;
-  private long syncFramePresentationTimeNs;
-  private long frameCount;
+  private long vsyncDurationNs;
+  private long vsyncOffsetNs;
+
+  private long frameIndex;
+  private long pendingLastAdjustedFrameIndex;
+  private long pendingLastAdjustedReleaseTimeNs;
+  private long lastAdjustedFrameIndex;
+  private long lastAdjustedReleaseTimeNs;
 
   /**
-   * Constructs an instance that smoothes frame release timestamps but does not align them with
+   * Constructs an instance that smooths frame release timestamps but does not align them with
    * the default display's vsync signal.
    */
   public VideoFrameReleaseTimeHelper() {
-    this(-1 /* Value unused */, false);
+    this(null);
   }
 
   /**
-   * Constructs an instance that smoothes frame release timestamps and aligns them with the default
+   * Constructs an instance that smooths frame release timestamps and aligns them with the default
    * display's vsync signal.
    *
    * @param context A context from which information about the default display can be retrieved.
    */
-  public VideoFrameReleaseTimeHelper(Context context) {
-    this(getDefaultDisplayRefreshRate(context), true);
-  }
-
-  private VideoFrameReleaseTimeHelper(double defaultDisplayRefreshRate,
-      boolean useDefaultDisplayVsync) {
-    this.useDefaultDisplayVsync = useDefaultDisplayVsync;
-    if (useDefaultDisplayVsync) {
-      vsyncSampler = VSyncSampler.getInstance();
-      vsyncDurationNs = (long) (C.NANOS_PER_SECOND / defaultDisplayRefreshRate);
-      vsyncOffsetNs = (vsyncDurationNs * VSYNC_OFFSET_PERCENTAGE) / 100;
+  public VideoFrameReleaseTimeHelper(@Nullable Context context) {
+    fixedFrameRateEstimator = new FixedFrameRateEstimator();
+    if (context != null) {
+      context = context.getApplicationContext();
+      windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
     } else {
+      windowManager = null;
+    }
+    if (windowManager != null) {
+      displayListener = Util.SDK_INT >= 17 ? maybeBuildDefaultDisplayListenerV17(context) : null;
+      vsyncSampler = VSyncSampler.getInstance();
+    } else {
+      displayListener = null;
       vsyncSampler = null;
-      vsyncDurationNs = -1; // Value unused.
-      vsyncOffsetNs = -1; // Value unused.
     }
+    vsyncDurationNs = C.TIME_UNSET;
+    vsyncOffsetNs = C.TIME_UNSET;
+    formatFrameRate = Format.NO_VALUE;
+    playbackSpeed = 1f;
   }
 
-  /**
-   * Enables the helper.
-   */
-  public void enable() {
-    haveSync = false;
-    if (useDefaultDisplayVsync) {
+  /** Called when the renderer is enabled. */
+  @TargetApi(17) // displayListener is null if Util.SDK_INT < 17.
+  public void onEnabled() {
+    fixedFrameRateEstimator.reset();
+    if (windowManager != null) {
       vsyncSampler.addObserver();
+      if (displayListener != null) {
+        displayListener.register();
+      }
+      updateDefaultDisplayRefreshRateParams();
     }
   }
 
-  /**
-   * Disables the helper.
-   */
-  public void disable() {
-    if (useDefaultDisplayVsync) {
+  /** Called when the renderer is disabled. */
+  @TargetApi(17) // displayListener is null if Util.SDK_INT < 17.
+  public void onDisabled() {
+    if (windowManager != null) {
+      if (displayListener != null) {
+        displayListener.unregister();
+      }
       vsyncSampler.removeObserver();
     }
   }
 
+  /** Called when the renderer is started. */
+  public void onStarted() {
+    resetAdjustment();
+  }
+
+  /** Called when the renderer's position is reset. */
+  public void onPositionReset() {
+    resetAdjustment();
+  }
+
   /**
-   * Adjusts a frame release timestamp.
+   * Called when the renderer's playback speed changes, where 1 is the default rate, 2 is twice the
+   * default rate, 0.5 is half the default rate and so on.
    *
-   * @param framePresentationTimeUs The frame's presentation time, in microseconds.
-   * @param unadjustedReleaseTimeNs The frame's unadjusted release time, in nanoseconds and in
-   *     the same time base as {@link System#nanoTime()}.
+   * @param playbackSpeed The player's speed.
+   */
+  public void onPlaybackSpeed(double playbackSpeed) {
+    this.playbackSpeed = playbackSpeed;
+    resetAdjustment();
+  }
+
+  /**
+   * Called when the renderer's output format changes.
+   *
+   * @param formatFrameRate The format's frame rate, or {@link Format#NO_VALUE} if unknown.
+   */
+  public void onFormatChanged(float formatFrameRate) {
+    this.formatFrameRate = formatFrameRate;
+    fixedFrameRateEstimator.onFormatChanged(formatFrameRate);
+  }
+
+  /**
+   * Called by the renderer for each frame, prior to it being skipped, dropped or rendered.
+   *
+   * @param framePresentationTimeUs The frame presentation timestamp, in microseconds.
+   */
+  public void onNextFrame(long framePresentationTimeUs) {
+    if (pendingLastAdjustedFrameIndex != C.INDEX_UNSET) {
+      lastAdjustedFrameIndex = pendingLastAdjustedFrameIndex;
+      lastAdjustedReleaseTimeNs = pendingLastAdjustedReleaseTimeNs;
+    }
+    fixedFrameRateEstimator.onNextFrame(framePresentationTimeUs * 1000);
+    frameIndex++;
+  }
+
+  /** Returns the estimated playback frame rate, or {@link C#RATE_UNSET} if unknown. */
+  public float getPlaybackFrameRate() {
+    // TODO: Hook up fixedFrameRateEstimator.
+    return formatFrameRate == Format.NO_VALUE
+        ? C.RATE_UNSET
+        : (float) (formatFrameRate * playbackSpeed);
+  }
+
+  /**
+   * Adjusts the release timestamp for the next frame. This is the frame whose presentation
+   * timestamp was most recently passed to {@link #onNextFrame}.
+   *
+   * <p>This method may be called any number of times for each frame, including zero times (for
+   * skipped frames, or when rendering the first frame prior to playback starting), or more than
+   * once (if the caller wishes to give the helper the opportunity to refine a release time closer
+   * to when the frame needs to be released).
+   *
+   * @param releaseTimeNs The frame's unadjusted release time, in nanoseconds and in the same time
+   *     base as {@link System#nanoTime()}.
    * @return The adjusted frame release timestamp, in nanoseconds and in the same time base as
    *     {@link System#nanoTime()}.
    */
-  public long adjustReleaseTime(long framePresentationTimeUs, long unadjustedReleaseTimeNs) {
-    long framePresentationTimeNs = framePresentationTimeUs * 1000;
-
+  public long adjustReleaseTime(long releaseTimeNs) {
     // Until we know better, the adjustment will be a no-op.
-    long adjustedFrameTimeNs = framePresentationTimeNs;
-    long adjustedReleaseTimeNs = unadjustedReleaseTimeNs;
+    long adjustedReleaseTimeNs = releaseTimeNs;
 
-    if (haveSync) {
-      // See if we've advanced to the next frame.
-      if (framePresentationTimeUs != lastFramePresentationTimeUs) {
-        frameCount++;
-        adjustedLastFrameTimeNs = pendingAdjustedFrameTimeNs;
-      }
-      if (frameCount >= MIN_FRAMES_FOR_ADJUSTMENT) {
-        // We're synced and have waited the required number of frames to apply an adjustment.
-        // Calculate the average frame time across all the frames we've seen since the last sync.
-        // This will typically give us a frame rate at a finer granularity than the frame times
-        // themselves (which often only have millisecond granularity).
-        long averageFrameDurationNs = (framePresentationTimeNs - syncFramePresentationTimeNs)
-            / frameCount;
-        // Project the adjusted frame time forward using the average.
-        long candidateAdjustedFrameTimeNs = adjustedLastFrameTimeNs + averageFrameDurationNs;
-
-        if (isDriftTooLarge(candidateAdjustedFrameTimeNs, unadjustedReleaseTimeNs)) {
-          haveSync = false;
-        } else {
-          adjustedFrameTimeNs = candidateAdjustedFrameTimeNs;
-          adjustedReleaseTimeNs = syncUnadjustedReleaseTimeNs + adjustedFrameTimeNs
-              - syncFramePresentationTimeNs;
-        }
+    if (lastAdjustedFrameIndex != C.INDEX_UNSET && fixedFrameRateEstimator.isSynced()) {
+      long frameDurationNs = fixedFrameRateEstimator.getFrameDurationNs();
+      long candidateAdjustedReleaseTimeNs =
+          lastAdjustedReleaseTimeNs
+              + getPlayoutDuration(frameDurationNs * (frameIndex - lastAdjustedFrameIndex));
+      if (adjustmentAllowed(releaseTimeNs, candidateAdjustedReleaseTimeNs)) {
+        adjustedReleaseTimeNs = candidateAdjustedReleaseTimeNs;
       } else {
-        // We're synced but haven't waited the required number of frames to apply an adjustment.
-        // Check drift anyway.
-        if (isDriftTooLarge(framePresentationTimeNs, unadjustedReleaseTimeNs)) {
-          haveSync = false;
-        }
+        resetAdjustment();
       }
     }
+    pendingLastAdjustedFrameIndex = frameIndex;
+    pendingLastAdjustedReleaseTimeNs = adjustedReleaseTimeNs;
 
-    // If we need to sync, do so now.
-    if (!haveSync) {
-      syncFramePresentationTimeNs = framePresentationTimeNs;
-      syncUnadjustedReleaseTimeNs = unadjustedReleaseTimeNs;
-      frameCount = 0;
-      haveSync = true;
-      onSynced();
-    }
-
-    lastFramePresentationTimeUs = framePresentationTimeUs;
-    pendingAdjustedFrameTimeNs = adjustedFrameTimeNs;
-
-    if (vsyncSampler == null || vsyncSampler.sampledVsyncTimeNs == 0) {
+    if (vsyncSampler == null || vsyncDurationNs == C.TIME_UNSET) {
       return adjustedReleaseTimeNs;
     }
-
+    long sampledVsyncTimeNs = vsyncSampler.sampledVsyncTimeNs;
+    if (sampledVsyncTimeNs == C.TIME_UNSET) {
+      return adjustedReleaseTimeNs;
+    }
     // Find the timestamp of the closest vsync. This is the vsync that we're targeting.
-    long snappedTimeNs = closestVsync(adjustedReleaseTimeNs,
-        vsyncSampler.sampledVsyncTimeNs, vsyncDurationNs);
+    long snappedTimeNs = closestVsync(adjustedReleaseTimeNs, sampledVsyncTimeNs, vsyncDurationNs);
     // Apply an offset so that we release before the target vsync, but after the previous one.
     return snappedTimeNs - vsyncOffsetNs;
   }
 
-  protected void onSynced() {
-    // Do nothing.
+  private void resetAdjustment() {
+    frameIndex = 0;
+    lastAdjustedFrameIndex = C.INDEX_UNSET;
+    pendingLastAdjustedFrameIndex = C.INDEX_UNSET;
   }
 
-  private boolean isDriftTooLarge(long frameTimeNs, long releaseTimeNs) {
-    long elapsedFrameTimeNs = frameTimeNs - syncFramePresentationTimeNs;
-    long elapsedReleaseTimeNs = releaseTimeNs - syncUnadjustedReleaseTimeNs;
-    return Math.abs(elapsedReleaseTimeNs - elapsedFrameTimeNs) > MAX_ALLOWED_DRIFT_NS;
+  @RequiresApi(17)
+  private DefaultDisplayListener maybeBuildDefaultDisplayListenerV17(Context context) {
+    DisplayManager manager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+    return manager == null ? null : new DefaultDisplayListener(manager);
+  }
+
+  private void updateDefaultDisplayRefreshRateParams() {
+    Display defaultDisplay = windowManager.getDefaultDisplay();
+    if (defaultDisplay != null) {
+      double defaultDisplayRefreshRate = defaultDisplay.getRefreshRate();
+      vsyncDurationNs = (long) (C.NANOS_PER_SECOND / defaultDisplayRefreshRate);
+      vsyncOffsetNs = (vsyncDurationNs * VSYNC_OFFSET_PERCENTAGE) / 100;
+    } else {
+      Log.w(TAG, "Unable to query display refresh rate");
+      vsyncDurationNs = C.TIME_UNSET;
+      vsyncOffsetNs = C.TIME_UNSET;
+    }
+  }
+
+  private long getPlayoutDuration(long mediaDuration) {
+    return (long) (mediaDuration / playbackSpeed);
+  }
+
+  private static boolean adjustmentAllowed(
+      long unadjustedReleaseTimeNs, long adjustedReleaseTimeNs) {
+    return Math.abs(unadjustedReleaseTimeNs - adjustedReleaseTimeNs) <= MAX_ALLOWED_ADJUSTMENT_NS;
   }
 
   private static long closestVsync(long releaseTime, long sampledVsyncTime, long vsyncDuration) {
@@ -200,9 +280,40 @@ public final class VideoFrameReleaseTimeHelper {
     return snappedAfterDiff < snappedBeforeDiff ? snappedAfterNs : snappedBeforeNs;
   }
 
-  private static float getDefaultDisplayRefreshRate(Context context) {
-    WindowManager manager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-    return manager.getDefaultDisplay().getRefreshRate();
+  @RequiresApi(17)
+  private final class DefaultDisplayListener implements DisplayManager.DisplayListener {
+
+    private final DisplayManager displayManager;
+
+    public DefaultDisplayListener(DisplayManager displayManager) {
+      this.displayManager = displayManager;
+    }
+
+    public void register() {
+      displayManager.registerDisplayListener(this, null);
+    }
+
+    public void unregister() {
+      displayManager.unregisterDisplayListener(this);
+    }
+
+    @Override
+    public void onDisplayAdded(int displayId) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onDisplayRemoved(int displayId) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onDisplayChanged(int displayId) {
+      if (displayId == Display.DEFAULT_DISPLAY) {
+        updateDefaultDisplayRefreshRateParams();
+      }
+    }
+
   }
 
   /**
@@ -230,9 +341,10 @@ public final class VideoFrameReleaseTimeHelper {
     }
 
     private VSyncSampler() {
-      choreographerOwnerThread = new HandlerThread("ChoreographerOwner:Handler");
+      sampledVsyncTimeNs = C.TIME_UNSET;
+      choreographerOwnerThread = new HandlerThread("ExoPlayer:FrameReleaseChoreographer");
       choreographerOwnerThread.start();
-      handler = new Handler(choreographerOwnerThread.getLooper(), this);
+      handler = Util.createHandler(choreographerOwnerThread.getLooper(), /* callback= */ this);
       handler.sendEmptyMessage(CREATE_CHOREOGRAPHER);
     }
 
@@ -255,7 +367,7 @@ public final class VideoFrameReleaseTimeHelper {
     @Override
     public void doFrame(long vsyncTimeNs) {
       sampledVsyncTimeNs = vsyncTimeNs;
-      choreographer.postFrameCallbackDelayed(this, CHOREOGRAPHER_SAMPLE_DELAY_MILLIS);
+      choreographer.postFrameCallbackDelayed(this, VSYNC_SAMPLE_UPDATE_PERIOD_MS);
     }
 
     @Override
@@ -294,10 +406,9 @@ public final class VideoFrameReleaseTimeHelper {
       observerCount--;
       if (observerCount == 0) {
         choreographer.removeFrameCallback(this);
-        sampledVsyncTimeNs = 0;
+        sampledVsyncTimeNs = C.TIME_UNSET;
       }
     }
 
   }
-
 }
